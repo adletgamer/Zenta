@@ -22,7 +22,7 @@ const PAGE_TITLES: Record<string, string> = {
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
-  const pageTitle = PAGE_TITLES[location.pathname] || 'CalzaPro ERP';
+  const pageTitle = PAGE_TITLES[location.pathname] || 'Zenta ERP';
   const verificationMode = import.meta.env.VITE_VERIFICATION_MODE || 'SIMULATED';
 
   return (
@@ -30,7 +30,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       {/* Sidebar */}
       <aside className="app-sidebar">
         <div className="sidebar-logo">
-          <div className="sidebar-logo-title">CalzaPro ERP</div>
+          <div className="sidebar-logo-title">Zenta ERP</div>
           <div className="sidebar-logo-subtitle">Zenta · ZK Manufacturing</div>
         </div>
 

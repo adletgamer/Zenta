@@ -1,6 +1,6 @@
 <div align="center">
 
-# Zenta — CalzaPro ERP
+# Zenta
 
 ### Zero-Knowledge Payroll Verification for Footwear Manufacturing on Stellar
 
@@ -18,7 +18,7 @@ calculations using zero-knowledge proofs (Circom + Groth16) and Stellar Soroban 
 
 ## Project Overview
 
-CalzaPro ERP is a full-stack manufacturing management system for footwear factories. The core
+Zenta is a full-stack manufacturing management system for footwear factories. The core
 innovation is **ZK-powered payroll verification**: operators are paid based on production output,
 and Zenta proves that payroll was calculated correctly without revealing sensitive data on-chain.
 

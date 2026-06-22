@@ -29,7 +29,7 @@ export function Dashboard() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Operations Dashboard</h1>
-          <p className="page-subtitle">Real-time overview of CalzaPro manufacturing operations</p>
+          <p className="page-subtitle">Real-time overview of Zenta manufacturing operations</p>
         </div>
       </div>
 

@@ -1,6 +1,6 @@
 /**
  * Zenta Database Seed
- * Seeds demo data for the CalzaPro ERP MVP
+ * Seeds demo data for the Zenta ERP MVP
  */
 import { PrismaClient } from '../generated/client';
 import crypto from 'crypto';
