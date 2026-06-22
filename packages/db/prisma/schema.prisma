@@ -1,0 +1,165 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---- Enums --------------------------------------------------
+// SQLite does not support native enums — using String with validation in app layer
+
+// ---- Models -------------------------------------------------
+
+model Operator {
+  id               String   @id @default(cuid())
+  pseudonymousCode String   @unique
+  displayName      String
+  specialization   String   // CUTTING | STITCHING | ASSEMBLY | SOLE_ATTACHMENT | FINISHING
+  active           Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  assignments          OperatorAssignment[]
+  payrollCalculations  PayrollCalculation[]
+  payments             Payment[]
+  auditEvents          AuditEvent[]
+
+  @@map("operators")
+}
+
+model StageRate {
+  id          String   @id @default(cuid())
+  stage       String   @unique // CUTTING | STITCHING | ASSEMBLY | SOLE_ATTACHMENT | FINISHING
+  ratePerPair Float
+  active      Boolean  @default(true)
+  version     Int      @default(1)
+  validFrom   DateTime @default(now())
+  validTo     DateTime?
+  updatedAt   DateTime @updatedAt
+
+  @@map("stage_rates")
+}
+
+model ProductionLot {
+  id                  String   @id @default(cuid())
+  lotCode             String   @unique
+  plannedDate         DateTime
+  model               String
+  color               String
+  priority            String   @default("NORMAL") // LOW | NORMAL | HIGH | URGENT
+  sizeCurve           String   @default("Standard")
+  totalPairs          Int
+  currentStage        String   @default("QUEUE")  // QUEUE | CUTTING | STITCHING | ASSEMBLY | SOLE_ATTACHMENT | FINISHING | COMPLETED
+  status              String   @default("ACTIVE") // ACTIVE | PAUSED | COMPLETED | CANCELLED
+  estimatedMaterial   Float    @default(0)
+  estimatedLaborHours Float    @default(0)
+  notes               String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  assignments OperatorAssignment[]
+  auditEvents AuditEvent[]
+
+  @@map("production_lots")
+}
+
+model OperatorAssignment {
+  id               String    @id @default(cuid())
+  operatorId       String
+  productionLotId  String
+  fromStage        String    // Stage when assigned
+  toStage          String?   // Stage when completed
+  processedPairs   Int       @default(0)
+  assignedAt       DateTime  @default(now())
+  completedAt      DateTime?
+
+  operator      Operator      @relation(fields: [operatorId], references: [id])
+  productionLot ProductionLot @relation(fields: [productionLotId], references: [id])
+
+  @@map("operator_assignments")
+}
+
+model PayrollCalculation {
+  id                  String    @id @default(cuid())
+  operatorId          String
+  periodLabel         String    // e.g. "Week 1 - June 2025"
+  periodStart         DateTime
+  periodEnd           DateTime
+  processedPairs      Int
+  ratePerPair         Float
+  bonus               Float     @default(0)
+  penalty             Float     @default(0)
+  expectedPayment     Float     // processedPairs * ratePerPair + bonus - penalty
+  paidAmount          Float     @default(0)
+  pendingBalance      Float     // expectedPayment - paidAmount
+  commitmentHash      String?
+  periodHash          String?
+  proofStatus         String    @default("NOT_GENERATED") // NOT_GENERATED | GENERATING | GENERATED | VERIFYING | VERIFIED | FAILED
+  verificationStatus  String?
+  verificationMode    String    @default("SIMULATED")
+  stellarTxHash       String?
+  stellarContractId   String?
+  verifiedAt          DateTime?
+  createdAt           DateTime  @default(now())
+
+  operator     Operator        @relation(fields: [operatorId], references: [id])
+  payments     Payment[]
+  zkRecord     ZkVerification?
+
+  @@map("payroll_calculations")
+}
+
+model Payment {
+  id                    String    @id @default(cuid())
+  operatorId            String
+  payrollCalculationId  String?
+  amount                Float
+  method                String    // CASH | TRANSFER | VOUCHER
+  reference             String?
+  notes                 String?
+  paidAt                DateTime  @default(now())
+
+  operator           Operator            @relation(fields: [operatorId], references: [id])
+  payrollCalculation PayrollCalculation? @relation(fields: [payrollCalculationId], references: [id])
+
+  @@map("payments")
+}
+
+model AuditEvent {
+  id               String   @id @default(cuid())
+  eventType        String   // LOT_CREATED | LOT_ADVANCED | OPERATOR_ASSIGNED | PAYROLL_CALCULATED | etc.
+  entityType       String   // Lot | Operator | Payroll | ZkVerification
+  entityId         String
+  operatorId       String?
+  productionLotId  String?
+  commitmentHash   String?
+  metadata         String   @default("{}") // JSON stored as string in SQLite
+  createdAt        DateTime @default(now())
+
+  operator      Operator?      @relation(fields: [operatorId], references: [id])
+  productionLot ProductionLot? @relation(fields: [productionLotId], references: [id])
+
+  @@map("audit_events")
+}
+
+model ZkVerification {
+  id                    String    @id @default(cuid())
+  payrollCalculationId  String    @unique
+  commitmentHash        String    @unique
+  periodHash            String
+  proofStatus           String    @default("NOT_GENERATED")
+  proofData             String?   // JSON Groth16 proof
+  publicSignals         String?   // JSON public signals
+  verificationMode      String    @default("SIMULATED")
+  stellarTxHash         String?
+  stellarContractId     String?
+  verifiedAt            DateTime?
+  createdAt             DateTime  @default(now())
+
+  payrollCalculation PayrollCalculation @relation(fields: [payrollCalculationId], references: [id])
+
+  @@map("zk_verifications")
+}

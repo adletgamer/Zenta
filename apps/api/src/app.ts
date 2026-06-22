@@ -1,0 +1,58 @@
+import 'dotenv/config';
+import 'express-async-errors';
+import express from 'express';
+import cors from 'cors';
+
+import { lotsRouter } from './routes/lots';
+import { operatorsRouter } from './routes/operators';
+import { ratesRouter } from './routes/rates';
+import { payrollRouter } from './routes/payroll';
+import { auditRouter } from './routes/audit';
+import { zkRouter } from './routes/zk';
+
+export function createApp() {
+  const app = express();
+
+  app.use(cors({
+    origin: process.env.FRONTEND_URL || true,
+    credentials: true,
+  }));
+  app.use(express.json());
+  app.use(express.urlencoded({ extended: true }));
+
+  const healthHandler: express.RequestHandler = (_req, res) => {
+    res.json({
+      status: 'ok',
+      app: 'Zenta ERP API',
+      version: '1.0.0',
+      verificationMode: process.env.VERIFICATION_MODE || 'SIMULATED',
+      timestamp: new Date().toISOString(),
+    });
+  };
+
+  app.get('/health', healthHandler);
+  app.get('/api/health', healthHandler);
+
+  app.use('/api/lots', lotsRouter);
+  app.use('/api/operators', operatorsRouter);
+  app.use('/api/rates', ratesRouter);
+  app.use('/api/payroll', payrollRouter);
+  app.use('/api/audit', auditRouter);
+  app.use('/api/zk', zkRouter);
+
+  app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    console.error('[ERROR]', err.message, err.stack);
+    res.status(500).json({
+      success: false,
+      error: err.message || 'Internal server error',
+    });
+  });
+
+  app.use((_req, res) => {
+    res.status(404).json({ success: false, error: 'Route not found' });
+  });
+
+  return app;
+}
+
+export default createApp();

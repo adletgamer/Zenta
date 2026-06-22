@@ -1,0 +1,28 @@
+{
+  "name": "zenta",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ZK-powered payroll verification for footwear manufacturing on Stellar",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:api\" \"npm run dev:web\"",
+    "dev:api": "npm run dev --workspace=apps/api",
+    "dev:web": "npm run dev --workspace=apps/web",
+    "build": "npm run build --workspace=packages/shared && npm run build --workspace=apps/api && npm run build --workspace=apps/web",
+    "db:generate": "npm run generate --workspace=packages/db",
+    "db:migrate": "npm run migrate --workspace=packages/db",
+    "db:push": "npm run push --workspace=packages/db",
+    "db:seed": "npm run seed --workspace=packages/db",
+    "db:studio": "npm run studio --workspace=packages/db",
+    "db:reset": "npm run reset --workspace=packages/db",
+    "zk:setup": "npm run setup --workspace=packages/zk",
+    "zk:compile": "npm run compile --workspace=packages/zk"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "typescript": "^5.3.3"
+  }
+}

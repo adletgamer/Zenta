@@ -1,0 +1,8 @@
+{
+  "buildCommand": "npm run db:generate && npm run build --workspace=apps/web",
+  "outputDirectory": "apps/web/dist",
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/[...path].ts" },
+    { "source": "/(.*)", "destination": "/" }
+  ]
+}

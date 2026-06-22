@@ -1,0 +1,13 @@
+[workspace]
+members = ["zenta-verifier"]
+resolver = "2"
+
+[profile.release]
+opt-level = "z"
+overflow-checks = true
+debug = 0
+strip = "symbols"
+debug-assertions = false
+panic = "abort"
+codesize-optimization-pass = true
+multiple-codegen-units = false

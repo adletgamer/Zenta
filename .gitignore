@@ -1,0 +1,6 @@
+node_modules
+.env
+dist
+apps/*/dist
+packages/*/dist
+packages/db/generated

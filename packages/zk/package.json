@@ -1,0 +1,18 @@
+{
+  "name": "@zenta/zk",
+  "version": "1.0.0",
+  "description": "Circom ZK circuits for Zenta payroll verification (Groth16)",
+  "scripts": {
+    "compile": "circom circuits/payroll.circom --r1cs --wasm --sym --output build",
+    "setup": "node scripts/setup.js",
+    "generate-proof": "node scripts/generate_proof.js",
+    "verify-proof": "node scripts/verify_proof.js",
+    "export-verifier": "node scripts/export_verifier.js"
+  },
+  "devDependencies": {
+    "snarkjs": "^0.7.4"
+  },
+  "dependencies": {
+    "snarkjs": "^0.7.4"
+  }
+}
