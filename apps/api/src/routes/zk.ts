@@ -226,7 +226,7 @@ zkRouter.post('/verify-on-stellar', async (req, res) => {
       data: {
         proofStatus: stellarResult.success ? 'VERIFIED' : 'FAILED',
         verificationStatus: stellarResult.status,
-        verificationMode,
+        verificationMode: stellarResult.verificationMode,
         stellarTxHash: stellarResult.txHash,
         stellarContractId: stellarResult.contractId,
         verifiedAt: stellarResult.success ? verifiedAt : null,
@@ -236,7 +236,7 @@ zkRouter.post('/verify-on-stellar', async (req, res) => {
       where: { payrollCalculationId },
       data: {
         proofStatus: stellarResult.success ? 'VERIFIED' : 'FAILED',
-        verificationMode,
+        verificationMode: stellarResult.verificationMode,
         stellarTxHash: stellarResult.txHash,
         stellarContractId: stellarResult.contractId,
         verifiedAt: stellarResult.success ? verifiedAt : null,
@@ -249,7 +249,7 @@ zkRouter.post('/verify-on-stellar', async (req, res) => {
         txHash: stellarResult.txHash,
         contractId: stellarResult.contractId,
         status: stellarResult.status,
-        mode: verificationMode,
+        mode: stellarResult.verificationMode,
         ledger: stellarResult.ledger,
       },
     }),
@@ -266,6 +266,7 @@ zkRouter.post('/verify-on-stellar', async (req, res) => {
       txHash: stellarResult.txHash,
       contractId: stellarResult.contractId,
       ledger: stellarResult.ledger,
+      eventConfirmed: stellarResult.eventConfirmed,
     },
   });
 

@@ -4,3 +4,6 @@ dist
 apps/*/dist
 packages/*/dist
 packages/db/generated
+packages/contracts/target
+packages/zk/build
+.stellar
