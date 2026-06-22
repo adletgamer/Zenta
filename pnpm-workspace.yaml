@@ -1,8 +1,10 @@
 packages:
   - 'apps/*'
   - 'packages/*'
+confirmModulesPurge: false
 allowBuilds:
   '@prisma/client': true
   '@prisma/engines': true
+  blake-hash: true
   esbuild: true
   prisma: true

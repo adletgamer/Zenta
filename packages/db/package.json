@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "main": "./generated/client",
   "scripts": {
+    "prisma": "prisma",
     "generate": "prisma generate",
     "migrate": "prisma migrate dev --name init",
     "migrate:deploy": "prisma migrate deploy",

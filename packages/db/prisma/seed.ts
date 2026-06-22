@@ -230,11 +230,11 @@ async function main() {
       expectedPayment: 35.00, // 15*2.00 + 5.00 bonus
       paidAmount: 20.00,
       pendingBalance: 15.00,
-      commitmentHash: '0x' + crypto.createHash('sha256').update('carlos-week1-2025').digest('hex'),
-      periodHash: '0x' + crypto.createHash('sha256').update('week1-june-2025').digest('hex'),
-      proofStatus: 'GENERATED',
-      verificationMode: 'SIMULATED',
-      verificationStatus: 'LOCALLY_VERIFIED',
+      commitmentHash: null,
+      periodHash: null,
+      proofStatus: 'NOT_GENERATED',
+      verificationMode: 'ZK_OFFCHAIN',
+      verificationStatus: null,
     },
   });
 
@@ -252,13 +252,13 @@ async function main() {
       expectedPayment: 120.00,
       paidAmount: 120.00,
       pendingBalance: 0,
-      commitmentHash: '0x' + crypto.createHash('sha256').update('maria-week1-2025').digest('hex'),
-      periodHash: '0x' + crypto.createHash('sha256').update('week1-june-2025').digest('hex'),
-      proofStatus: 'VERIFIED',
-      verificationMode: 'SIMULATED',
-      verificationStatus: 'SIMULATED_VERIFIED',
-      stellarTxHash: '0x' + crypto.createHash('sha256').update('stellar-sim-maria').digest('hex'),
-      verifiedAt: new Date('2025-06-08T10:00:00Z'),
+      commitmentHash: null,
+      periodHash: null,
+      proofStatus: 'NOT_GENERATED',
+      verificationMode: 'ZK_OFFCHAIN',
+      verificationStatus: null,
+      stellarTxHash: null,
+      verifiedAt: null,
     },
   });
 
@@ -279,7 +279,7 @@ async function main() {
       commitmentHash: null,
       periodHash: null,
       proofStatus: 'NOT_GENERATED',
-      verificationMode: 'SIMULATED',
+      verificationMode: 'ZK_OFFCHAIN',
       verificationStatus: null,
     },
   });
@@ -312,95 +312,7 @@ async function main() {
     }),
   ]);
   console.log('  ✓ Created payments');
-
-  // ---- ZK Verifications ------------------------------------------
-  console.log('  Creating ZK verifications...');
-  // María has a simulated verified proof
-  const mariaCommitment = await prisma.zkCommitment.create({
-    data: {
-      payrollCalculationId: payrollMaria.id,
-      operatorId: maria.id,
-      commitmentHash: payrollMaria.commitmentHash!,
-      periodHash: payrollMaria.periodHash!,
-      poseidonInputDigest: '0x' + crypto.createHash('sha256').update('poseidon-sim-maria-inputs').digest('hex'),
-      nonce: crypto.randomBytes(16).toString('hex'),
-      hashAlgorithm: 'POSEIDON_SIMULATED',
-      mode: 'SIMULATED',
-    },
-  });
-
-  await prisma.zkCommitment.create({
-    data: {
-      payrollCalculationId: payrollCarlos.id,
-      operatorId: carlos.id,
-      commitmentHash: payrollCarlos.commitmentHash!,
-      periodHash: payrollCarlos.periodHash!,
-      poseidonInputDigest: '0x' + crypto.createHash('sha256').update('poseidon-sim-carlos-inputs').digest('hex'),
-      nonce: crypto.randomBytes(16).toString('hex'),
-      hashAlgorithm: 'POSEIDON_SIMULATED',
-      mode: 'SIMULATED',
-    },
-  });
-
-  await prisma.zkVerification.create({
-    data: {
-      payrollCalculationId: payrollMaria.id,
-      commitmentHash: payrollMaria.commitmentHash!,
-      periodHash: payrollMaria.periodHash!,
-      proofStatus: 'VERIFIED',
-      proofData: JSON.stringify({
-        pi_a: ['0x1abc', '0x2def', '0x1'],
-        pi_b: [['0x3ghi', '0x4jkl'], ['0x5mno', '0x6pqr'], ['0x1', '0x0']],
-        pi_c: ['0x7stu', '0x8vwx', '0x1'],
-        protocol: 'groth16',
-        curve: 'bn128',
-        commitmentScheme: 'POSEIDON_SIMULATED',
-        _simulation: true,
-      }),
-      publicSignals: JSON.stringify(['1', payrollMaria.commitmentHash!, payrollMaria.periodHash!]),
-      verificationMode: 'SIMULATED',
-      stellarTxHash: payrollMaria.stellarTxHash,
-      stellarContractId: 'SIMULATED_ZENTA_VERIFIER_MARIA',
-      verifiedAt: new Date('2025-06-08T10:00:00Z'),
-    },
-  });
-
-  await prisma.stellarSubmission.create({
-    data: {
-      zkCommitmentId: mariaCommitment.id,
-      payrollCalculationId: payrollMaria.id,
-      txHash: payrollMaria.stellarTxHash!,
-      contractId: 'SIMULATED_ZENTA_VERIFIER_MARIA',
-      status: 'SIMULATED_VERIFIED',
-      mode: 'SIMULATED',
-      ledger: 50001001,
-      submittedAt: new Date('2025-06-08T10:00:00Z'),
-    },
-  });
-
-  // Carlos has a generated proof (not yet verified on Stellar)
-  await prisma.zkVerification.create({
-    data: {
-      payrollCalculationId: payrollCarlos.id,
-      commitmentHash: payrollCarlos.commitmentHash!,
-      periodHash: payrollCarlos.periodHash!,
-      proofStatus: 'GENERATED',
-      proofData: JSON.stringify({
-        pi_a: ['0xaabc', '0xbdef', '0x1'],
-        pi_b: [['0xcghi', '0xdjkl'], ['0xemno', '0xfpqr'], ['0x1', '0x0']],
-        pi_c: ['0xgstu', '0xhvwx', '0x1'],
-        protocol: 'groth16',
-        curve: 'bn128',
-        commitmentScheme: 'POSEIDON_SIMULATED',
-        _simulation: true,
-      }),
-      publicSignals: JSON.stringify(['1', payrollCarlos.commitmentHash!, payrollCarlos.periodHash!]),
-      verificationMode: 'SIMULATED',
-      stellarTxHash: null,
-      verifiedAt: null,
-    },
-  });
-  console.log('  ✓ Created ZK verifications');
+  console.log('  Skipping pre-generated ZK proofs');
 
   // ---- Audit Events ----------------------------------------------
   console.log('  Creating audit events...');
@@ -445,26 +357,6 @@ async function main() {
     }),
     prisma.auditEvent.create({
       data: {
-        eventType: 'COMMITMENT_GENERATED',
-        entityType: 'ZkVerification',
-        entityId: payrollMaria.id,
-        operatorId: maria.id,
-        commitmentHash: payrollMaria.commitmentHash,
-        metadata: JSON.stringify({ mode: 'SIMULATED', periodLabel: 'Week 1 - June 2025' }),
-      },
-    }),
-    prisma.auditEvent.create({
-      data: {
-        eventType: 'PROOF_VERIFIED',
-        entityType: 'ZkVerification',
-        entityId: payrollMaria.id,
-        operatorId: maria.id,
-        commitmentHash: payrollMaria.commitmentHash,
-        metadata: JSON.stringify({ mode: 'SIMULATED', stellarTx: payrollMaria.stellarTxHash }),
-      },
-    }),
-    prisma.auditEvent.create({
-      data: {
         eventType: 'PAYMENT_REGISTERED',
         entityType: 'Payment',
         entityId: payrollCarlos.id,
@@ -482,8 +374,8 @@ async function main() {
   console.log(`   Operator Assignments: ${assignments.length}`);
   console.log('   Payroll Calculations: 3');
   console.log('   Payments: 2');
-  console.log('   ZK Verifications: 2');
-  console.log('   Audit Events: 7');
+  console.log('   ZK Verifications: 0');
+  console.log('   Audit Events: 5');
 }
 
 main()

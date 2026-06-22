@@ -6,7 +6,7 @@ import { zkService } from '../services/zk.service';
 import { stellarService } from '../services/stellar.service';
 
 export const zkRouter = Router();
-const verificationMode = 'SIMULATED';
+const verificationMode = 'ZK_OFFCHAIN';
 
 zkRouter.get('/summary', async (_req, res) => {
   const [payrolls, verifications] = await Promise.all([
@@ -130,7 +130,7 @@ zkRouter.post('/generate-commitment', async (req, res) => {
     operatorId: calc.operatorId,
     commitmentHash: commitment.commitmentHash,
     metadata: {
-      mode: verificationMode,
+      mode: commitment.verificationMode,
       hashAlgorithm: commitment.hashAlgorithm,
       periodLabel: calc.periodLabel,
       poseidonInputDigest: commitment.poseidonInputDigest,
@@ -144,10 +144,10 @@ zkRouter.post('/generate-proof', async (req, res) => {
   const { payrollCalculationId } = z.object({ payrollCalculationId: z.string() }).parse(req.body);
   const calc = await prisma.payrollCalculation.findUnique({
     where: { id: payrollCalculationId },
-    include: { operator: true, zkRecord: true },
+    include: { operator: true, zkRecord: true, zkCommitment: true },
   });
   if (!calc) return res.status(404).json({ success: false, error: 'Payroll calculation not found' });
-  if (!calc.commitmentHash || !calc.periodHash || !calc.zkRecord) {
+  if (!calc.commitmentHash || !calc.periodHash || !calc.zkRecord || !calc.zkCommitment) {
     return res.status(400).json({ success: false, error: 'Commitment must be generated first' });
   }
 
@@ -161,6 +161,7 @@ zkRouter.post('/generate-proof', async (req, res) => {
     periodLabel: calc.periodLabel,
     commitmentHash: calc.commitmentHash,
     periodHash: calc.periodHash,
+    nonce: calc.zkCommitment.nonce,
     verificationMode,
   });
 

@@ -37,7 +37,9 @@ export function createApp() {
   app.get('/api/health', healthHandler);
 
   app.use('/api/lots', lotsRouter);
+  app.use('/api/production', lotsRouter);
   app.use('/api/operators', operatorsRouter);
+  app.use('/api/employees', operatorsRouter);
   app.use('/api/rates', ratesRouter);
   app.use('/api/payroll', payrollRouter);
   app.use('/api/audit', auditRouter);

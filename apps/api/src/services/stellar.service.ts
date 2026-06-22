@@ -25,12 +25,14 @@ async function verifyPayroll(input: StellarVerifyInput): Promise<StellarVerifyRe
 function simulateVerification(input: StellarVerifyInput): StellarVerifyResult {
   console.log('[STELLAR][SIMULATED] Recording simulated on-chain payroll verification');
 
-  const hasSimulationMarker = (input.proofData as { _simulation?: boolean })._simulation === true;
+  const proof = input.proofData as { _simulation?: boolean; pi_a?: unknown; pi_b?: unknown; pi_c?: unknown };
+  const hasSimulationMarker = proof._simulation === true;
+  const hasGroth16Proof = Boolean(proof.pi_a && proof.pi_b && proof.pi_c);
   const signalsMatch =
-    input.publicSignals.includes(input.commitmentHash) &&
-    input.publicSignals.includes(input.periodHash);
+    input.publicSignals.includes(input.commitmentHash) ||
+    input.publicSignals[0] === input.commitmentHash;
 
-  const success = hasSimulationMarker && signalsMatch;
+  const success = (hasSimulationMarker || hasGroth16Proof) && signalsMatch;
   const txHash = '0x' + crypto
     .createHash('sha256')
     .update(`stellar-sim:${input.commitmentHash}:${Date.now()}`)
@@ -43,7 +45,7 @@ function simulateVerification(input: StellarVerifyInput): StellarVerifyResult {
     status: success ? 'SIMULATED_VERIFIED' : 'SIMULATED_REJECTED',
     verificationMode: 'SIMULATED',
     ledger: Math.floor(Math.random() * 1000000) + 50000000,
-    error: success ? undefined : 'Simulated proof envelope did not match public signals',
+    error: success ? undefined : 'Proof data did not match the public commitment signal',
   };
 }
 

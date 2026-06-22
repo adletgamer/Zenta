@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { createAuditEvent } from '../lib/audit';
 import { z } from 'zod';
+import { zkService } from '../services/zk.service';
 
 export const payrollRouter = Router();
 
@@ -60,7 +61,16 @@ payrollRouter.post('/calculate', async (req, res) => {
   });
   const processedPairs = assignments.reduce((s, a) => s + a.processedPairs, 0);
 
-  const expectedPayment = processedPairs * rate.ratePerPair + body.bonus - body.penalty;
+  const expectedPayment = processedPairs * rate.ratePerPair + body.bonus;
+  const commitment = await zkService.generateCommitment({
+      operatorPseudoCode: operator.pseudonymousCode,
+      processedPairs,
+      ratePerPair: rate.ratePerPair,
+      bonus: body.bonus,
+      penalty: body.penalty,
+      expectedPayment,
+      periodLabel: body.periodLabel,
+  });
 
   // Get already paid amount for this period
   const existing = await prisma.payrollCalculation.findFirst({
@@ -79,6 +89,10 @@ payrollRouter.post('/calculate', async (req, res) => {
       penalty: body.penalty,
       expectedPayment,
       pendingBalance,
+      commitmentHash: commitment.commitmentHash,
+      periodHash: commitment.periodHash,
+      proofStatus: 'GENERATING',
+      verificationMode: commitment.verificationMode,
     },
     create: {
       operatorId: body.operatorId,
@@ -92,10 +106,35 @@ payrollRouter.post('/calculate', async (req, res) => {
       expectedPayment,
       paidAmount,
       pendingBalance,
-      proofStatus: 'NOT_GENERATED',
-      verificationMode: 'SIMULATED',
+      commitmentHash: commitment.commitmentHash,
+      periodHash: commitment.periodHash,
+      proofStatus: 'GENERATING',
+      verificationMode: commitment.verificationMode,
     },
     include: { operator: true },
+  });
+
+  await prisma.zkCommitment.upsert({
+    where: { payrollCalculationId: calc.id },
+    update: {
+      operatorId: operator.id,
+      commitmentHash: commitment.commitmentHash,
+      periodHash: commitment.periodHash,
+      poseidonInputDigest: commitment.poseidonInputDigest,
+      nonce: commitment.nonce,
+      hashAlgorithm: commitment.hashAlgorithm,
+      mode: commitment.verificationMode,
+    },
+    create: {
+      payrollCalculationId: calc.id,
+      operatorId: operator.id,
+      commitmentHash: commitment.commitmentHash,
+      periodHash: commitment.periodHash,
+      poseidonInputDigest: commitment.poseidonInputDigest,
+      nonce: commitment.nonce,
+      hashAlgorithm: commitment.hashAlgorithm,
+      mode: commitment.verificationMode,
+    },
   });
 
   await createAuditEvent({
@@ -103,7 +142,15 @@ payrollRouter.post('/calculate', async (req, res) => {
     entityType: 'PayrollCalculation',
     entityId: calc.id,
     operatorId: body.operatorId,
-    metadata: { pairs: processedPairs, rate: rate.ratePerPair, amount: expectedPayment, period: body.periodLabel },
+    commitmentHash: commitment.commitmentHash,
+    metadata: {
+      pairs: processedPairs,
+      rate: rate.ratePerPair,
+      bonus: body.bonus,
+      amount: expectedPayment,
+      period: body.periodLabel,
+      hashAlgorithm: commitment.hashAlgorithm,
+    },
   });
 
   res.status(201).json({ success: true, data: calc });
