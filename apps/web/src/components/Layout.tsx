@@ -1,21 +1,18 @@
 import { NavLink, useLocation } from 'react-router-dom';
 
 const NAV_ITEMS = [
-  { path: '/', label: 'Dashboard', icon: '⬡', exact: true },
-  { path: '/production', label: 'Production Planning', icon: '◈' },
-  { path: '/operators', label: 'Operator Assignment', icon: '◉' },
-  { path: '/rates', label: 'Rate Management', icon: '◎' },
-  { path: '/payroll', label: 'Weekly Payroll', icon: '◆' },
-  { path: '/audit', label: 'Audit Log', icon: '◧' },
-  { path: '/zk', label: 'ZK Verification', icon: '⬡' },
+  { path: '/', label: 'Produccion', icon: 'P', exact: true },
+  { path: '/operators', label: 'Empleados', icon: 'E' },
+  { path: '/payroll', label: 'Nomina', icon: 'N' },
+  { path: '/zk', label: 'Auditoria ZK', icon: 'ZK' },
 ];
 
 const PAGE_TITLES: Record<string, string> = {
   '/': 'Dashboard',
-  '/production': 'Production Planning',
-  '/operators': 'Operator Assignment',
-  '/rates': 'Rate Management',
-  '/payroll': 'Weekly Payroll',
+  '/production': 'Produccion',
+  '/operators': 'Empleados',
+  '/rates': 'Empleados',
+  '/payroll': 'Nomina',
   '/audit': 'Audit Log',
   '/zk': 'ZK Verification Center',
 };
@@ -27,50 +24,44 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="app-layout">
-      {/* Sidebar */}
       <aside className="app-sidebar">
         <div className="sidebar-logo">
           <div className="sidebar-logo-title">Zenta ERP</div>
-          <div className="sidebar-logo-subtitle">Zenta · ZK Manufacturing</div>
+          <div className="sidebar-logo-subtitle">Zenta - ZK Payroll</div>
         </div>
 
         <nav className="sidebar-section">
-          <div className="sidebar-section-label">Modules</div>
+          <div className="sidebar-section-label">V1 Modules</div>
           {NAV_ITEMS.map(item => (
             <NavLink
               key={item.path}
               to={item.path}
               end={item.exact}
-              className={({ isActive }) =>
-                `sidebar-nav-item${isActive ? ' active' : ''}`
-              }
+              className={({ isActive }) => `sidebar-nav-item${isActive ? ' active' : ''}`}
             >
-              <span style={{ fontSize: '16px', lineHeight: 1 }}>{item.icon}</span>
+              <span className="nav-glyph">{item.icon}</span>
               {item.label}
             </NavLink>
           ))}
         </nav>
 
         <div className="sidebar-bottom">
-          <div className="sidebar-version-tag">v1.0.0 · MVP</div>
-          <div style={{ fontSize: '10px', color: 'var(--color-on-surface-muted)', marginTop: '4px' }}>
-            Stellar Hacks 2025
+          <div className="sidebar-version-tag">v1.0.0 - MVP</div>
+          <div style={{ fontSize: '10px', color: 'var(--color-on-surface-dim)', marginTop: '4px' }}>
+            SIMULATED first, Circom later
           </div>
         </div>
       </aside>
 
-      {/* Main */}
       <div className="app-main">
-        {/* Topbar */}
         <header className="app-topbar">
           <span className="topbar-page-title">{pageTitle}</span>
           <span className="topbar-spacer" />
           <span className={`topbar-badge ${verificationMode === 'STELLAR_TESTNET' ? 'stellar' : 'simulated'}`}>
-            ⬡ {verificationMode === 'STELLAR_TESTNET' ? 'Stellar Testnet' : 'Simulated Mode'}
+            ZK {verificationMode === 'STELLAR_TESTNET' ? 'Stellar Testnet' : 'Simulated Mode'}
           </span>
         </header>
 
-        {/* Page Content */}
         <main className="app-content">
           {children}
         </main>

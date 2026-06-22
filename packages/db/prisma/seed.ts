@@ -16,6 +16,8 @@ async function main() {
   console.log('🌱 Seeding Zenta database...');
 
   // ---- Clean existing data (order matters for FK constraints) ----
+  await prisma.stellarSubmission.deleteMany();
+  await prisma.zkCommitment.deleteMany();
   await prisma.zkVerification.deleteMany();
   await prisma.payment.deleteMany();
   await prisma.payrollCalculation.deleteMany();
@@ -314,6 +316,32 @@ async function main() {
   // ---- ZK Verifications ------------------------------------------
   console.log('  Creating ZK verifications...');
   // María has a simulated verified proof
+  const mariaCommitment = await prisma.zkCommitment.create({
+    data: {
+      payrollCalculationId: payrollMaria.id,
+      operatorId: maria.id,
+      commitmentHash: payrollMaria.commitmentHash!,
+      periodHash: payrollMaria.periodHash!,
+      poseidonInputDigest: '0x' + crypto.createHash('sha256').update('poseidon-sim-maria-inputs').digest('hex'),
+      nonce: crypto.randomBytes(16).toString('hex'),
+      hashAlgorithm: 'POSEIDON_SIMULATED',
+      mode: 'SIMULATED',
+    },
+  });
+
+  await prisma.zkCommitment.create({
+    data: {
+      payrollCalculationId: payrollCarlos.id,
+      operatorId: carlos.id,
+      commitmentHash: payrollCarlos.commitmentHash!,
+      periodHash: payrollCarlos.periodHash!,
+      poseidonInputDigest: '0x' + crypto.createHash('sha256').update('poseidon-sim-carlos-inputs').digest('hex'),
+      nonce: crypto.randomBytes(16).toString('hex'),
+      hashAlgorithm: 'POSEIDON_SIMULATED',
+      mode: 'SIMULATED',
+    },
+  });
+
   await prisma.zkVerification.create({
     data: {
       payrollCalculationId: payrollMaria.id,
@@ -326,11 +354,27 @@ async function main() {
         pi_c: ['0x7stu', '0x8vwx', '0x1'],
         protocol: 'groth16',
         curve: 'bn128',
+        commitmentScheme: 'POSEIDON_SIMULATED',
+        _simulation: true,
       }),
       publicSignals: JSON.stringify(['1', payrollMaria.commitmentHash!, payrollMaria.periodHash!]),
       verificationMode: 'SIMULATED',
       stellarTxHash: payrollMaria.stellarTxHash,
+      stellarContractId: 'SIMULATED_ZENTA_VERIFIER_MARIA',
       verifiedAt: new Date('2025-06-08T10:00:00Z'),
+    },
+  });
+
+  await prisma.stellarSubmission.create({
+    data: {
+      zkCommitmentId: mariaCommitment.id,
+      payrollCalculationId: payrollMaria.id,
+      txHash: payrollMaria.stellarTxHash!,
+      contractId: 'SIMULATED_ZENTA_VERIFIER_MARIA',
+      status: 'SIMULATED_VERIFIED',
+      mode: 'SIMULATED',
+      ledger: 50001001,
+      submittedAt: new Date('2025-06-08T10:00:00Z'),
     },
   });
 
@@ -347,6 +391,8 @@ async function main() {
         pi_c: ['0xgstu', '0xhvwx', '0x1'],
         protocol: 'groth16',
         curve: 'bn128',
+        commitmentScheme: 'POSEIDON_SIMULATED',
+        _simulation: true,
       }),
       publicSignals: JSON.stringify(['1', payrollCarlos.commitmentHash!, payrollCarlos.periodHash!]),
       verificationMode: 'SIMULATED',

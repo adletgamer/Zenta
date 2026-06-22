@@ -1,5 +1,6 @@
-import 'dotenv/config';
 import 'express-async-errors';
+import path from 'path';
+import dotenv from 'dotenv';
 import express from 'express';
 import cors from 'cors';
 
@@ -9,6 +10,8 @@ import { ratesRouter } from './routes/rates';
 import { payrollRouter } from './routes/payroll';
 import { auditRouter } from './routes/audit';
 import { zkRouter } from './routes/zk';
+
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 
 export function createApp() {
   const app = express();

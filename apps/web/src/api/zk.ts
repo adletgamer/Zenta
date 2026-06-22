@@ -16,11 +16,47 @@ export interface ZkVerification {
   payrollCalculation?: {
     periodLabel: string;
     expectedPayment: number;
+    processedPairs?: number;
     operator: { displayName: string; specialization: string };
+    zkCommitment?: {
+      hashAlgorithm: string;
+      poseidonInputDigest: string;
+      mode: string;
+    } | null;
   };
 }
 
+export interface ZkSummary {
+  pendingPayrolls: number;
+  generatedProofs: number;
+  verifiedOnchain: number;
+  latestCommitmentHash: string | null;
+  mode: string;
+}
+
+export interface ZkQueueItem {
+  id: string;
+  periodLabel: string;
+  processedPairs: number;
+  ratePerPair: number;
+  expectedPayment: number;
+  pendingBalance: number;
+  proofStatus: string;
+  commitmentHash: string | null;
+  periodHash: string | null;
+  stellarTxHash: string | null;
+  verifiedAt: string | null;
+  operator?: { displayName: string; specialization: string };
+  zkCommitment?: {
+    hashAlgorithm: string;
+    poseidonInputDigest: string;
+    mode: string;
+  } | null;
+}
+
 export const zkApi = {
+  summary: () => api.get<ApiResponse<ZkSummary>>('/api/zk/summary'),
+  queue: () => api.get<ApiResponse<ZkQueueItem[]>>('/api/zk/queue'),
   list: () => api.get<ApiResponse<ZkVerification[]>>('/api/zk/verifications'),
   generateCommitment: (payrollCalculationId: string) =>
     api.post<ApiResponse<unknown>>('/api/zk/generate-commitment', { payrollCalculationId }),

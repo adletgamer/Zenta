@@ -9,8 +9,13 @@ export function StageBadge({ stage }: { stage: string }) {
     COMPLETED: 'badge badge-stage-completed',
   };
   const labels: Record<string, string> = {
-    QUEUE: 'Queue', CUTTING: 'Cutting', STITCHING: 'Stitching',
-    ASSEMBLY: 'Assembly', SOLE_ATTACHMENT: 'Sole Attach', FINISHING: 'Finishing', COMPLETED: 'Completed',
+    QUEUE: 'Queue',
+    CUTTING: 'Cutting',
+    STITCHING: 'Stitching',
+    ASSEMBLY: 'Assembly',
+    SOLE_ATTACHMENT: 'Sole Attach',
+    FINISHING: 'Finishing',
+    COMPLETED: 'Completed',
   };
   return <span className={map[stage] || 'badge'}>{labels[stage] || stage}</span>;
 }
@@ -36,11 +41,11 @@ export function ProofStatusBadge({ status }: { status: string }) {
   };
   const labels: Record<string, string> = {
     NOT_GENERATED: 'Not Generated',
-    GENERATING: 'Generating…',
+    GENERATING: 'Generating...',
     GENERATED: 'Generated',
-    VERIFYING: 'Verifying…',
-    VERIFIED: '✓ Verified',
-    FAILED: '✗ Failed',
+    VERIFYING: 'Verifying...',
+    VERIFIED: 'Verified',
+    FAILED: 'Failed',
   };
   return <span className={map[status] || 'badge'}>{labels[status] || status}</span>;
 }
@@ -56,8 +61,11 @@ export function PaymentMethodBadge({ method }: { method: string }) {
 
 export function SpecializationBadge({ spec }: { spec: string }) {
   const labels: Record<string, string> = {
-    CUTTING: 'Corte', STITCHING: 'Aparado', ASSEMBLY: 'Armado',
-    SOLE_ATTACHMENT: 'Ensuelado', FINISHING: 'Acabado',
+    CUTTING: 'Corte',
+    STITCHING: 'Aparado',
+    ASSEMBLY: 'Armado',
+    SOLE_ATTACHMENT: 'Ensuelado',
+    FINISHING: 'Acabado',
   };
   return <span className="badge badge-stage-queue">{labels[spec] || spec}</span>;
 }

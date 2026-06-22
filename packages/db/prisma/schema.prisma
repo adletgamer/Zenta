@@ -26,6 +26,7 @@ model Operator {
   payrollCalculations  PayrollCalculation[]
   payments             Payment[]
   auditEvents          AuditEvent[]
+  zkCommitments        ZkCommitment[]
 
   @@map("operators")
 }
@@ -108,6 +109,7 @@ model PayrollCalculation {
   operator     Operator        @relation(fields: [operatorId], references: [id])
   payments     Payment[]
   zkRecord     ZkVerification?
+  zkCommitment ZkCommitment?
 
   @@map("payroll_calculations")
 }
@@ -162,4 +164,39 @@ model ZkVerification {
   payrollCalculation PayrollCalculation @relation(fields: [payrollCalculationId], references: [id])
 
   @@map("zk_verifications")
+}
+
+model ZkCommitment {
+  id                    String   @id @default(cuid())
+  payrollCalculationId  String   @unique
+  operatorId            String
+  commitmentHash        String   @unique
+  periodHash            String
+  poseidonInputDigest   String
+  nonce                 String
+  hashAlgorithm         String   @default("POSEIDON_SIMULATED")
+  mode                  String   @default("SIMULATED")
+  createdAt             DateTime @default(now())
+
+  payrollCalculation PayrollCalculation @relation(fields: [payrollCalculationId], references: [id])
+  operator           Operator           @relation(fields: [operatorId], references: [id])
+  stellarSubmissions StellarSubmission[]
+
+  @@map("zk_commitments")
+}
+
+model StellarSubmission {
+  id                    String    @id @default(cuid())
+  zkCommitmentId         String
+  payrollCalculationId   String
+  txHash                String
+  contractId            String
+  status                String
+  mode                  String    @default("SIMULATED")
+  ledger                Int?
+  submittedAt           DateTime  @default(now())
+
+  zkCommitment ZkCommitment @relation(fields: [zkCommitmentId], references: [id])
+
+  @@map("stellar_submissions")
 }
