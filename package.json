@@ -19,7 +19,11 @@
     "db:studio": "npm run studio --workspace=packages/db",
     "db:reset": "npm run reset --workspace=packages/db",
     "zk:setup": "npm run setup --workspace=packages/zk",
-    "zk:compile": "npm run compile --workspace=packages/zk"
+    "zk:compile": "npm run compile --workspace=packages/zk",
+    "zk:build": "npm run build-circuit --workspace=packages/zk",
+    "zk:prove": "npm run prove --workspace=packages/zk",
+    "zk:verify": "npm run verify --workspace=packages/zk",
+    "zk:test": "npm run test --workspace=packages/zk"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",

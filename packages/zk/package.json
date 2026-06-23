@@ -2,8 +2,13 @@
   "name": "@zenta/zk",
   "version": "1.0.0",
   "description": "Circom ZK circuits for Zenta payroll verification (Groth16)",
+  "main": "src/index.ts",
   "scripts": {
     "compile": "circom circuits/payroll.circom --r1cs --wasm --sym --output build",
+    "build-circuit": "ts-node --project tsconfig.json --transpile-only scripts/build-circuit.ts",
+    "prove": "ts-node --project tsconfig.json --transpile-only scripts/generate-proof.ts",
+    "verify": "ts-node --project tsconfig.json --transpile-only scripts/verify-proof.ts",
+    "test": "npm run prove && npm run verify",
     "build:zk": "bash scripts/build.sh",
     "setup": "node scripts/setup.js",
     "generate-proof": "node scripts/generate_proof.js",

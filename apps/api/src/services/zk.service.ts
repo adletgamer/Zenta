@@ -6,6 +6,7 @@ type Poseidon = ((inputs: bigint[]) => bigint) & { F: { toObject: (value: unknow
 
 export interface CommitmentInput {
   operatorPseudoCode: string;
+  roleCode: string;
   processedPairs: number;
   ratePerPair: number;
   bonus: number;
@@ -80,17 +81,20 @@ function cents(value: number): bigint {
 }
 
 function buildWitness(input: CommitmentInput, periodHash: string, nonce: string) {
-  const units = BigInt(input.processedPairs);
-  const rate = cents(input.ratePerPair);
+  const processedPairs = BigInt(input.processedPairs);
+  const ratePerPair = cents(input.ratePerPair);
   const bonus = cents(input.bonus);
-  const payment = units * rate + bonus;
+  const penalty = cents(input.penalty);
+  const expectedPayment = cents(input.expectedPayment);
 
   return {
     operatorCodeHash: toField(input.operatorPseudoCode),
-    units,
-    rate,
+    roleCode: toField(`role:${input.roleCode}`),
+    processedPairs,
+    ratePerPair,
     bonus,
-    payment,
+    penalty,
+    expectedPayment,
     periodHash: BigInt(periodHash),
     nonce: BigInt(nonce),
   };
@@ -101,16 +105,21 @@ async function poseidonHash(values: bigint[]): Promise<string> {
   return poseidon.F.toObject(poseidon(values)).toString();
 }
 
-async function generateCommitment(input: CommitmentInput): Promise<CommitmentOutput> {
-  const periodHash = toField(`period:${input.periodLabel}`).toString();
-  const nonce = BigInt('0x' + crypto.randomBytes(31).toString('hex')).toString();
+async function generateCommitment(
+  input: CommitmentInput,
+  overrides: { periodHash?: string; nonce?: string } = {},
+): Promise<CommitmentOutput> {
+  const periodHash = overrides.periodHash ?? toField(`period:${input.periodLabel}`).toString();
+  const nonce = overrides.nonce ?? BigInt('0x' + crypto.randomBytes(31).toString('hex')).toString();
   const witness = buildWitness(input, periodHash, nonce);
   const poseidonInputs = [
     witness.operatorCodeHash,
-    witness.units,
-    witness.rate,
+    witness.roleCode,
+    witness.processedPairs,
+    witness.ratePerPair,
     witness.bonus,
-    witness.payment,
+    witness.penalty,
+    witness.expectedPayment,
     witness.periodHash,
     witness.nonce,
   ];
@@ -122,7 +131,7 @@ async function generateCommitment(input: CommitmentInput): Promise<CommitmentOut
     nonce,
     poseidonInputDigest: poseidonInputs.join('|'),
     hashAlgorithm: 'POSEIDON',
-    verificationMode: input.penalty === 0 ? 'ZK_OFFCHAIN' : 'ZK_OFFCHAIN',
+    verificationMode: 'ZK_OFFCHAIN',
   };
 }
 
@@ -134,12 +143,14 @@ async function generateProof(input: ProofInput): Promise<ProofOutput> {
   const snarkjs = await getSnarkjs();
   const witness = buildWitness(input, input.periodHash, input.nonce);
   const circuitInput = {
-    operatorCodeHash: witness.operatorCodeHash.toString(),
-    units: witness.units.toString(),
-    rate: witness.rate.toString(),
+    operator_code_hash: witness.operatorCodeHash.toString(),
+    role_code: witness.roleCode.toString(),
+    processed_pairs: witness.processedPairs.toString(),
+    rate_per_pair: witness.ratePerPair.toString(),
     bonus: witness.bonus.toString(),
-    payment: witness.payment.toString(),
-    periodHash: witness.periodHash.toString(),
+    penalty: witness.penalty.toString(),
+    expected_payment: witness.expectedPayment.toString(),
+    period_hash: witness.periodHash.toString(),
     nonce: witness.nonce.toString(),
     commitment: input.commitmentHash,
   };

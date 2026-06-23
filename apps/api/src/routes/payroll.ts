@@ -61,12 +61,18 @@ payrollRouter.post('/calculate', async (req, res) => {
   });
   const processedPairs = assignments.reduce((s, a) => s + a.processedPairs, 0);
 
-  const expectedPayment = processedPairs * rate.ratePerPair + body.bonus;
+  const grossPayment = processedPairs * rate.ratePerPair + body.bonus;
+  if (body.penalty > grossPayment) {
+    return res.status(400).json({ success: false, error: 'Penalty cannot exceed gross payroll amount' });
+  }
+
+  const expectedPayment = grossPayment - body.penalty;
   const commitment = await zkService.generateCommitment({
-      operatorPseudoCode: operator.pseudonymousCode,
-      processedPairs,
-      ratePerPair: rate.ratePerPair,
-      bonus: body.bonus,
+    operatorPseudoCode: operator.pseudonymousCode,
+    roleCode: operator.specialization,
+    processedPairs,
+    ratePerPair: rate.ratePerPair,
+    bonus: body.bonus,
       penalty: body.penalty,
       expectedPayment,
       periodLabel: body.periodLabel,

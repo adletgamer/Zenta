@@ -1,0 +1,11 @@
+{
+  "operator_code_hash": "123456789012345678901234567890",
+  "role_code": "101",
+  "processed_pairs": "2",
+  "rate_per_pair": "100",
+  "bonus": "0",
+  "penalty": "250",
+  "expected_payment": "0",
+  "period_hash": "777777777777777777777777777777",
+  "nonce": "987654321098765432109876543210"
+}

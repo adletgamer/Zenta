@@ -5,5 +5,15 @@ apps/*/dist
 packages/*/dist
 packages/db/generated
 packages/contracts/target
-packages/zk/build
 .stellar
+
+# ZK generated artifacts
+circom/
+packages/zk/build/
+*.r1cs
+*.sym
+*.wtns
+*.zkey
+proof.json
+public.json
+witness.wtns
