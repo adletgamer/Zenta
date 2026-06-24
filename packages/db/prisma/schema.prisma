@@ -110,6 +110,7 @@ model PayrollCalculation {
   payments     Payment[]
   zkRecord     ZkVerification?
   zkCommitment ZkCommitment?
+  zkProofs     ZkProof[]
 
   @@map("payroll_calculations")
 }
@@ -199,4 +200,72 @@ model StellarSubmission {
   zkCommitment ZkCommitment @relation(fields: [zkCommitmentId], references: [id])
 
   @@map("stellar_submissions")
+}
+
+model CircuitVersion {
+  id               String   @id @default(cuid())
+  name             String
+  version          String
+  circuitHash      String?
+  provingKeyPath   String?
+  verifyingKeyPath String?
+  active           Boolean  @default(true)
+  createdAt        DateTime @default(now())
+
+  proofs ZkProof[]
+
+  @@map("circuit_versions")
+}
+
+model ZkProof {
+  id                   String   @id @default(cuid())
+  payrollCalculationId String
+  circuitVersionId     String?
+
+  commitmentHash  String
+  commitmentField String?
+  periodHash      String
+
+  proofStatus       String   @default("NOT_GENERATED")
+  proofJson         Json?
+  publicSignals     Json?
+  proofPath         String?
+  publicSignalsPath String?
+
+  generatedAt        DateTime?
+  verifiedOffchainAt DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  payrollCalculation PayrollCalculation @relation(fields: [payrollCalculationId], references: [id])
+  circuitVersion     CircuitVersion?    @relation(fields: [circuitVersionId], references: [id])
+  onchainVerification OnchainVerification?
+
+  @@index([payrollCalculationId])
+  @@map("zk_proofs")
+}
+
+model OnchainVerification {
+  id        String @id @default(cuid())
+  zkProofId String @unique
+
+  verificationMode String
+  status           String @default("PENDING")
+
+  contractId     String?
+  stellarTxHash  String?
+  commitmentHash String
+  periodHash     String?
+
+  ledger         Int?
+  eventConfirmed Boolean @default(false)
+
+  submittedAt DateTime?
+  verifiedAt   DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  zkProof ZkProof @relation(fields: [zkProofId], references: [id])
+
+  @@map("onchain_verifications")
 }

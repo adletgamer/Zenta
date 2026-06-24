@@ -1,0 +1,11 @@
+*.wasm binary
+*.zkey binary
+*.wtns binary
+*.ptau binary
+*.r1cs binary
+
+*.json text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.md text eol=lf

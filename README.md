@@ -280,8 +280,104 @@ node deploy.js                       # Deploy to testnet
 ```env
 STELLAR_CONTRACT_ID=<contract_id_from_deploy>
 STELLAR_SECRET_KEY=<your_secret_key>
-VERIFICATION_MODE=STELLAR_TESTNET
+VERIFICATION_MODE=STELLAR_REGISTRY_TESTNET
 ```
+
+---
+
+## Hackathon Deployment
+
+Use two Vercel deployments for the demo:
+
+- `zenta-api`: Express/Node serverless backend. Connects to cloud Postgres, generates ZK proofs, verifies off-chain, and submits verified commitments to the Stellar registry.
+- `zenta-web`: Vite/React frontend. Calls the public API at `https://zenta-api.vercel.app/api/...`.
+
+Judges should open the frontend URL:
+
+```txt
+https://zenta-web.vercel.app
+```
+
+For Vercel, do not compile Circom circuits or run trusted setup at runtime. Precompile locally and ship only the runtime artifacts needed by the API:
+
+```txt
+packages/zk/build/payroll_js/payroll.wasm
+packages/zk/build/payroll_final.zkey
+packages/zk/build/verification_key.json
+```
+
+Do not ship generated proof scratch files such as `.r1cs`, `.sym`, `witness.wtns`, `proof.json`, or `public.json` unless a specific demo fallback requires them.
+
+Production database commands should use the workspace schema directly:
+
+```bash
+npm run db:generate
+npm run db:migrate:deploy
+```
+
+Use `prisma migrate deploy` in production, not `prisma migrate dev`.
+
+---
+
+## ZK Backend Pipeline
+
+The backend now supports the payroll ZK pipeline:
+
+```txt
+payroll calculation
+-> Poseidon commitment
+-> Circom input
+-> Groth16 proof
+-> off-chain verification
+-> Stellar PayrollRegistry commitment registration
+```
+
+What is real now:
+
+- The payroll circuit is implemented in `packages/zk/circuits/payroll.circom`.
+- The proof system uses Circom, snarkjs, Groth16, and Poseidon.
+- The circuit proves `expected_payment = processed_pairs * rate_per_pair + bonus - penalty`.
+- Money is scaled to integer cents before entering the circuit.
+- The public inputs are `commitment` and `period_hash`.
+- Proof generation and off-chain verification are real Groth16 flows.
+- The existing Stellar contract registers an already-verified commitment and confirms the `payroll_verified` event.
+
+Verification modes:
+
+- `SIMULATED`: no real Stellar submission; used only when explicitly configured for local/demo fallback.
+- `STELLAR_REGISTRY_TESTNET`: a real Stellar testnet transaction registers the off-chain-verified payroll commitment in the PayrollRegistry contract.
+- `STELLAR_ZK_TESTNET`: reserved for a future Soroban Groth16 verifier that verifies the proof on-chain. Do not use this mode for the current registry-only contract.
+
+Commands:
+
+```bash
+npm run zk:build
+npm run zk:prove
+npm run zk:verify
+npm run zk:test
+```
+
+API endpoints:
+
+```http
+POST /api/zk/generate-commitment
+POST /api/zk/generate-proof
+POST /api/zk/verify-offchain
+POST /api/zk/verify-on-stellar
+GET  /api/zk/verifications
+GET  /api/zk/proofs/:id
+```
+
+Proof artifacts are generated under `packages/zk/build/`. These artifacts use a deterministic local development contribution and are suitable for the hackathon MVP unless replaced by ceremony-produced proving artifacts.
+
+Privacy model:
+
+- Private inputs include operator hash, role code, production count, rates, bonus, penalty, expected payment, and nonce.
+- Public inputs only reveal the Poseidon commitment and period hash.
+- Poseidon is used because it is circuit-friendly; SHA-256 is not used for the circuit commitment.
+- Integer cents avoid floating-point behavior inside the circuit.
+
+Current limitation: Stellar testnet currently confirms commitment registration, not Groth16 verification on-chain. The next phase is a Soroban verifier contract that embeds or references the Groth16 verification key and checks proof pairings before registration.
 
 ---
 

@@ -13,13 +13,13 @@
     "reset": "prisma migrate reset --force && npm run seed"
   },
   "dependencies": {
-    "@prisma/client": "^5.8.1"
+    "@prisma/client": "^5.22.0"
   },
   "devDependencies": {
-    "prisma": "^5.8.1",
+    "@types/node": "^20.11.5",
+    "prisma": "^5.22.0",
     "ts-node": "^10.9.2",
-    "typescript": "^5.3.3",
-    "@types/node": "^20.11.5"
+    "typescript": "^5.3.3"
   },
   "prisma": {
     "seed": "ts-node --project tsconfig.json prisma/seed.ts"

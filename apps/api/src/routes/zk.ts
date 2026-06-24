@@ -3,331 +3,159 @@ import { z } from 'zod';
 import { prisma } from '../lib/prisma';
 import { createAuditEvent } from '../lib/audit';
 import { zkService } from '../services/zk.service';
-import { stellarService } from '../services/stellar.service';
 
 export const zkRouter = Router();
-const verificationMode = 'ZK_OFFCHAIN';
+
+const payrollBody = z.object({ payrollCalculationId: z.string() });
+const proofBody = z.object({
+  zkProofId: z.string().optional(),
+  payrollCalculationId: z.string().optional(),
+});
+
+async function resolveZkProofId(body: z.infer<typeof proofBody>): Promise<string> {
+  if (body.zkProofId) return body.zkProofId;
+  if (!body.payrollCalculationId) {
+    throw new Error('zkProofId or payrollCalculationId is required');
+  }
+
+  const latest = await prisma.zkProof.findFirst({
+    where: { payrollCalculationId: body.payrollCalculationId },
+    orderBy: { createdAt: 'desc' },
+  });
+  if (!latest) throw new Error('ZK proof not found for payrollCalculationId');
+  return latest.id;
+}
 
 zkRouter.get('/summary', async (_req, res) => {
-  const [payrolls, verifications] = await Promise.all([
+  const [payrolls, proofs, verifications] = await Promise.all([
     prisma.payrollCalculation.findMany(),
-    prisma.zkVerification.findMany({ orderBy: { createdAt: 'desc' }, take: 1 }),
+    prisma.zkProof.findMany({ orderBy: { createdAt: 'desc' }, take: 1 }),
+    prisma.onchainVerification.findMany({ orderBy: { createdAt: 'desc' }, take: 1 }),
   ]);
-
-  const pendingPayrolls = payrolls.filter(p => p.pendingBalance > 0).length;
-  const generatedProofs = payrolls.filter(p => ['GENERATED', 'VERIFYING', 'VERIFIED'].includes(p.proofStatus)).length;
-  const verifiedOnchain = payrolls.filter(p => p.proofStatus === 'VERIFIED').length;
 
   res.json({
     success: true,
     data: {
-      pendingPayrolls,
-      generatedProofs,
-      verifiedOnchain,
-      latestCommitmentHash: verifications[0]?.commitmentHash || null,
-      mode: verificationMode,
+      pendingPayrolls: payrolls.filter(p => p.pendingBalance > 0).length,
+      generatedProofs: payrolls.filter(p => ['GENERATED', 'OFFCHAIN_VERIFIED', 'VERIFIED'].includes(p.proofStatus)).length,
+      verifiedOnchain: payrolls.filter(p => p.proofStatus === 'VERIFIED').length,
+      latestCommitmentHash: proofs[0]?.commitmentHash ?? null,
+      mode: verifications[0]?.verificationMode ?? process.env.VERIFICATION_MODE ?? 'SIMULATED',
     },
   });
 });
 
 zkRouter.get('/queue', async (_req, res) => {
   const payrolls = await prisma.payrollCalculation.findMany({
-    include: { operator: true, zkRecord: true, zkCommitment: true },
+    include: { operator: true, zkRecord: true, zkCommitment: true, zkProofs: true },
     orderBy: { createdAt: 'desc' },
   });
   res.json({ success: true, data: payrolls });
 });
 
 zkRouter.get('/verifications', async (_req, res) => {
-  const verifications = await prisma.zkVerification.findMany({
+  const verifications = await prisma.onchainVerification.findMany({
     orderBy: { createdAt: 'desc' },
-    include: { payrollCalculation: { include: { operator: true, zkCommitment: true } } },
+    include: { zkProof: { include: { payrollCalculation: { include: { operator: true } } } } },
   });
   res.json({ success: true, data: verifications });
 });
 
 zkRouter.get('/verifications/:id', async (req, res) => {
-  const verification = await prisma.zkVerification.findUnique({
+  const verification = await prisma.onchainVerification.findUnique({
     where: { id: req.params.id },
-    include: { payrollCalculation: { include: { operator: true, zkCommitment: true } } },
+    include: { zkProof: { include: { payrollCalculation: { include: { operator: true } } } } },
   });
   if (!verification) return res.status(404).json({ success: false, error: 'Verification not found' });
   res.json({ success: true, data: verification });
 });
 
+zkRouter.get('/proofs/:id', async (req, res) => {
+  const proof = await prisma.zkProof.findUnique({
+    where: { id: req.params.id },
+    include: {
+      circuitVersion: true,
+      onchainVerification: true,
+      payrollCalculation: { include: { operator: true } },
+    },
+  });
+  if (!proof) return res.status(404).json({ success: false, error: 'Proof not found' });
+  res.json({ success: true, data: proof });
+});
+
 zkRouter.post('/generate-commitment', async (req, res) => {
-  const { payrollCalculationId } = z.object({ payrollCalculationId: z.string() }).parse(req.body);
-  const calc = await prisma.payrollCalculation.findUnique({
-    where: { id: payrollCalculationId },
-    include: { operator: true },
-  });
-  if (!calc) return res.status(404).json({ success: false, error: 'Payroll calculation not found' });
-
-  const commitment = await zkService.generateCommitment({
-    operatorPseudoCode: calc.operator.pseudonymousCode,
-    roleCode: calc.operator.specialization,
-    processedPairs: calc.processedPairs,
-    ratePerPair: calc.ratePerPair,
-    bonus: calc.bonus,
-    penalty: calc.penalty,
-    expectedPayment: calc.expectedPayment,
-    periodLabel: calc.periodLabel,
-  });
-
-  const [updatedPayroll, zkCommitment, zkRecord] = await prisma.$transaction([
-    prisma.payrollCalculation.update({
-      where: { id: payrollCalculationId },
-      data: {
-        commitmentHash: commitment.commitmentHash,
-        periodHash: commitment.periodHash,
-        proofStatus: 'GENERATING',
-        verificationMode,
-      },
-    }),
-    prisma.zkCommitment.upsert({
-      where: { payrollCalculationId },
-      update: {
-        operatorId: calc.operatorId,
-        commitmentHash: commitment.commitmentHash,
-        periodHash: commitment.periodHash,
-        poseidonInputDigest: commitment.poseidonInputDigest,
-        nonce: commitment.nonce,
-        hashAlgorithm: commitment.hashAlgorithm,
-        mode: verificationMode,
-      },
-      create: {
-        payrollCalculationId,
-        operatorId: calc.operatorId,
-        commitmentHash: commitment.commitmentHash,
-        periodHash: commitment.periodHash,
-        poseidonInputDigest: commitment.poseidonInputDigest,
-        nonce: commitment.nonce,
-        hashAlgorithm: commitment.hashAlgorithm,
-        mode: verificationMode,
-      },
-    }),
-    prisma.zkVerification.upsert({
-      where: { payrollCalculationId },
-      update: {
-        commitmentHash: commitment.commitmentHash,
-        periodHash: commitment.periodHash,
-        proofStatus: 'GENERATING',
-        verificationMode,
-      },
-      create: {
-        payrollCalculationId,
-        commitmentHash: commitment.commitmentHash,
-        periodHash: commitment.periodHash,
-        proofStatus: 'GENERATING',
-        verificationMode,
-      },
-    }),
-  ]);
+  const { payrollCalculationId } = payrollBody.parse(req.body);
+  const result = await zkService.generateCommitment(payrollCalculationId);
 
   await createAuditEvent({
     eventType: 'COMMITMENT_GENERATED',
-    entityType: 'ZkCommitment',
-    entityId: zkCommitment.id,
-    operatorId: calc.operatorId,
-    commitmentHash: commitment.commitmentHash,
+    entityType: 'ZkProof',
+    entityId: result.zkProof.id,
+    operatorId: result.payroll.operatorId,
+    commitmentHash: result.zkProof.commitmentHash,
     metadata: {
-      mode: commitment.verificationMode,
-      hashAlgorithm: commitment.hashAlgorithm,
-      periodLabel: calc.periodLabel,
-      poseidonInputDigest: commitment.poseidonInputDigest,
-    },
-  });
-
-  res.json({ success: true, data: { payroll: updatedPayroll, zkCommitment, zkRecord } });
-});
-
-zkRouter.post('/generate-proof', async (req, res) => {
-  const { payrollCalculationId } = z.object({ payrollCalculationId: z.string() }).parse(req.body);
-  const calc = await prisma.payrollCalculation.findUnique({
-    where: { id: payrollCalculationId },
-    include: { operator: true, zkRecord: true, zkCommitment: true },
-  });
-  if (!calc) return res.status(404).json({ success: false, error: 'Payroll calculation not found' });
-  if (!calc.commitmentHash || !calc.periodHash || !calc.zkRecord || !calc.zkCommitment) {
-    return res.status(400).json({ success: false, error: 'Commitment must be generated first' });
-  }
-
-  const commitmentInput = {
-    operatorPseudoCode: calc.operator.pseudonymousCode,
-    roleCode: calc.operator.specialization,
-    processedPairs: calc.processedPairs,
-    ratePerPair: calc.ratePerPair,
-    bonus: calc.bonus,
-    penalty: calc.penalty,
-    expectedPayment: calc.expectedPayment,
-    periodLabel: calc.periodLabel,
-  };
-  const currentCommitment = await zkService.generateCommitment(commitmentInput, {
-    periodHash: calc.periodHash,
-    nonce: calc.zkCommitment.nonce,
-  });
-  let commitmentHash = calc.commitmentHash;
-  let periodHash = calc.periodHash;
-
-  if (
-    currentCommitment.commitmentHash !== calc.commitmentHash ||
-    currentCommitment.poseidonInputDigest !== calc.zkCommitment.poseidonInputDigest
-  ) {
-    commitmentHash = currentCommitment.commitmentHash;
-    periodHash = currentCommitment.periodHash;
-
-    await prisma.$transaction([
-      prisma.payrollCalculation.update({
-        where: { id: payrollCalculationId },
-        data: {
-          commitmentHash,
-          periodHash,
-          proofStatus: 'GENERATING',
-          verificationMode,
-        },
-      }),
-      prisma.zkCommitment.update({
-        where: { payrollCalculationId },
-        data: {
-          commitmentHash,
-          periodHash,
-          poseidonInputDigest: currentCommitment.poseidonInputDigest,
-          hashAlgorithm: currentCommitment.hashAlgorithm,
-          mode: verificationMode,
-        },
-      }),
-      prisma.zkVerification.update({
-        where: { payrollCalculationId },
-        data: {
-          commitmentHash,
-          periodHash,
-          proofStatus: 'GENERATING',
-          proofData: null,
-          publicSignals: null,
-          verificationMode,
-          stellarTxHash: null,
-          stellarContractId: null,
-          verifiedAt: null,
-        },
-      }),
-    ]);
-  }
-
-  const proofResult = await zkService.generateProof({
-    ...commitmentInput,
-    commitmentHash,
-    periodHash,
-    nonce: calc.zkCommitment.nonce,
-    verificationMode,
-  });
-
-  const [updatedPayroll, updatedZk] = await prisma.$transaction([
-    prisma.payrollCalculation.update({
-      where: { id: payrollCalculationId },
-      data: { proofStatus: proofResult.success ? 'GENERATED' : 'FAILED', verificationMode },
-    }),
-    prisma.zkVerification.update({
-      where: { payrollCalculationId },
-      data: {
-        proofStatus: proofResult.success ? 'GENERATED' : 'FAILED',
-        proofData: JSON.stringify(proofResult.proof),
-        publicSignals: JSON.stringify(proofResult.publicSignals),
-        verificationMode,
-      },
-    }),
-  ]);
-
-  await createAuditEvent({
-    eventType: 'PROOF_GENERATED',
-    entityType: 'ZkVerification',
-    entityId: updatedZk.id,
-    operatorId: calc.operatorId,
-    commitmentHash,
-    metadata: { mode: verificationMode, success: proofResult.success },
-  });
-
-  res.json({ success: true, data: { payroll: updatedPayroll, zk: updatedZk, proof: proofResult } });
-});
-
-zkRouter.post('/verify-on-stellar', async (req, res) => {
-  const { payrollCalculationId } = z.object({ payrollCalculationId: z.string() }).parse(req.body);
-  const calc = await prisma.payrollCalculation.findUnique({
-    where: { id: payrollCalculationId },
-    include: { zkRecord: true, zkCommitment: true },
-  });
-  if (!calc?.zkRecord || !calc.zkCommitment) {
-    return res.status(404).json({ success: false, error: 'ZK record not found' });
-  }
-  if (calc.zkRecord.proofStatus !== 'GENERATED') {
-    return res.status(400).json({ success: false, error: 'Proof must be generated before verification' });
-  }
-
-  await prisma.zkVerification.update({
-    where: { payrollCalculationId },
-    data: { proofStatus: 'VERIFYING' },
-  });
-
-  const stellarResult = await stellarService.verifyPayroll({
-    commitmentHash: calc.zkRecord.commitmentHash,
-    periodHash: calc.zkRecord.periodHash,
-    proofData: JSON.parse(calc.zkRecord.proofData || '{}'),
-    publicSignals: JSON.parse(calc.zkRecord.publicSignals || '[]'),
-    verificationMode,
-  });
-
-  const verifiedAt = new Date();
-  const [updatedPayroll, updatedZk, stellarSubmission] = await prisma.$transaction([
-    prisma.payrollCalculation.update({
-      where: { id: payrollCalculationId },
-      data: {
-        proofStatus: stellarResult.success ? 'VERIFIED' : 'FAILED',
-        verificationStatus: stellarResult.status,
-        verificationMode: stellarResult.verificationMode,
-        stellarTxHash: stellarResult.txHash,
-        stellarContractId: stellarResult.contractId,
-        verifiedAt: stellarResult.success ? verifiedAt : null,
-      },
-    }),
-    prisma.zkVerification.update({
-      where: { payrollCalculationId },
-      data: {
-        proofStatus: stellarResult.success ? 'VERIFIED' : 'FAILED',
-        verificationMode: stellarResult.verificationMode,
-        stellarTxHash: stellarResult.txHash,
-        stellarContractId: stellarResult.contractId,
-        verifiedAt: stellarResult.success ? verifiedAt : null,
-      },
-    }),
-    prisma.stellarSubmission.create({
-      data: {
-        zkCommitmentId: calc.zkCommitment.id,
-        payrollCalculationId,
-        txHash: stellarResult.txHash,
-        contractId: stellarResult.contractId,
-        status: stellarResult.status,
-        mode: stellarResult.verificationMode,
-        ledger: stellarResult.ledger,
-      },
-    }),
-  ]);
-
-  await createAuditEvent({
-    eventType: stellarResult.success ? 'PROOF_VERIFIED' : 'STELLAR_SUBMITTED',
-    entityType: 'StellarSubmission',
-    entityId: stellarSubmission.id,
-    operatorId: calc.operatorId,
-    commitmentHash: calc.zkRecord.commitmentHash,
-    metadata: {
-      mode: verificationMode,
-      txHash: stellarResult.txHash,
-      contractId: stellarResult.contractId,
-      ledger: stellarResult.ledger,
-      eventConfirmed: stellarResult.eventConfirmed,
+      verificationMode: result.payroll.verificationMode,
+      proofStatus: result.zkProof.proofStatus,
     },
   });
 
   res.json({
-    success: true,
-    data: { payroll: updatedPayroll, zk: updatedZk, stellar: stellarResult, stellarSubmission },
+    zkProofId: result.zkProof.id,
+    payrollCalculationId,
+    commitmentHash: result.zkProof.commitmentHash,
+    commitmentField: result.zkProof.commitmentField,
+    periodHash: result.zkProof.periodHash,
+    proofStatus: result.zkProof.proofStatus,
+  });
+});
+
+zkRouter.post('/generate-proof', async (req, res) => {
+  const { payrollCalculationId } = payrollBody.parse(req.body);
+  const result = await zkService.generateProof(payrollCalculationId);
+
+  await createAuditEvent({
+    eventType: 'PROOF_GENERATED',
+    entityType: 'ZkProof',
+    entityId: result.zkProof.id,
+    operatorId: result.payroll.operatorId,
+    commitmentHash: result.zkProof.commitmentHash,
+    metadata: {
+      proofStatus: result.zkProof.proofStatus,
+      publicSignals: result.publicSignals,
+    },
+  });
+
+  res.json({
+    zkProofId: result.zkProof.id,
+    payrollCalculationId,
+    proofStatus: result.zkProof.proofStatus,
+    publicSignals: result.publicSignals,
+    commitmentHash: result.zkProof.commitmentHash,
+  });
+});
+
+zkRouter.post('/verify-offchain', async (req, res) => {
+  const zkProofId = await resolveZkProofId(proofBody.parse(req.body));
+  const result = await zkService.verifyProofOffchain(zkProofId);
+
+  res.json({
+    zkProofId,
+    proofStatus: result.zkProof.proofStatus,
+    offchainVerified: result.offchainVerified,
+  });
+});
+
+zkRouter.post('/verify-on-stellar', async (req, res) => {
+  const zkProofId = await resolveZkProofId(proofBody.parse(req.body));
+  const result = await zkService.submitProofToStellar(zkProofId);
+
+  res.json({
+    zkProofId,
+    verificationMode: result.onchainVerification.verificationMode,
+    status: result.onchainVerification.status,
+    stellarTxHash: result.onchainVerification.stellarTxHash,
+    ledger: result.onchainVerification.ledger,
+    eventConfirmed: result.onchainVerification.eventConfirmed,
+    contractId: result.onchainVerification.contractId,
   });
 });

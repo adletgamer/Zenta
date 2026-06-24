@@ -1,4 +1,5 @@
 node_modules
+.pnpm-store
 .env
 dist
 apps/*/dist
@@ -8,12 +9,17 @@ packages/contracts/target
 .stellar
 
 # ZK generated artifacts
+packages/zk/build/**
+
+# Keep only runtime ZK artifacts needed by API
+!packages/zk/build/
+!packages/zk/build/payroll_js/
+!packages/zk/build/payroll_js/payroll.wasm
+!packages/zk/build/payroll_final.zkey
+!packages/zk/build/verification_key.json
+
+# Local Circom/temp artifacts
 circom/
-packages/zk/build/
-*.r1cs
-*.sym
-*.wtns
-*.zkey
-proof.json
-public.json
-witness.wtns
+
+# Generated Prisma
+/generated/prisma

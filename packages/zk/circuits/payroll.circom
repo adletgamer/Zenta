@@ -44,20 +44,36 @@ template PayrollVerification() {
     computed_payment <== gross_payment - penalty;
     expected_payment === computed_payment;
 
-    component processed_pairs_range = Num2Bits(32);
-    processed_pairs_range.in <== processed_pairs;
+    // MVP bounds use integer cents:
+    // processed_pairs <= 100000
+    // rate_per_pair <= 1000000
+    // bonus <= 100000000
+    // penalty <= 100000000
+    // expected_payment <= 10000000000
+    component processed_pairs_max = LessEqThan(32);
+    processed_pairs_max.in[0] <== processed_pairs;
+    processed_pairs_max.in[1] <== 100000;
+    processed_pairs_max.out === 1;
 
-    component rate_per_pair_range = Num2Bits(32);
-    rate_per_pair_range.in <== rate_per_pair;
+    component rate_per_pair_max = LessEqThan(32);
+    rate_per_pair_max.in[0] <== rate_per_pair;
+    rate_per_pair_max.in[1] <== 1000000;
+    rate_per_pair_max.out === 1;
 
-    component bonus_range = Num2Bits(32);
-    bonus_range.in <== bonus;
+    component bonus_max = LessEqThan(32);
+    bonus_max.in[0] <== bonus;
+    bonus_max.in[1] <== 100000000;
+    bonus_max.out === 1;
 
-    component penalty_range = Num2Bits(64);
-    penalty_range.in <== penalty;
+    component penalty_max = LessEqThan(32);
+    penalty_max.in[0] <== penalty;
+    penalty_max.in[1] <== 100000000;
+    penalty_max.out === 1;
 
-    component expected_payment_range = Num2Bits(64);
-    expected_payment_range.in <== expected_payment;
+    component expected_payment_max = LessEqThan(34);
+    expected_payment_max.in[0] <== expected_payment;
+    expected_payment_max.in[1] <== 10000000000;
+    expected_payment_max.out === 1;
 
     component gross_payment_range = Num2Bits(64);
     gross_payment_range.in <== gross_payment;

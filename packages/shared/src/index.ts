@@ -35,7 +35,7 @@ export type ProofStatus =
   | 'VERIFIED'
   | 'FAILED';
 
-export type VerificationMode = 'SIMULATED' | 'STELLAR_TESTNET' | 'STELLAR_MAINNET';
+export type VerificationMode = 'SIMULATED' | 'STELLAR_REGISTRY_TESTNET' | 'STELLAR_ZK_TESTNET';
 
 export type AuditEventType =
   | 'LOT_CREATED'

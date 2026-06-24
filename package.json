@@ -12,12 +12,15 @@
     "dev:api": "npm run dev --workspace=apps/api",
     "dev:web": "npm run dev --workspace=apps/web",
     "build": "npm run build --workspace=packages/shared && npm run build --workspace=apps/api && npm run build --workspace=apps/web",
-    "db:generate": "npm run generate --workspace=packages/db",
-    "db:migrate": "npm run migrate --workspace=packages/db",
-    "db:push": "npm run push --workspace=packages/db",
-    "db:seed": "npm run seed --workspace=packages/db",
-    "db:studio": "npm run studio --workspace=packages/db",
-    "db:reset": "npm run reset --workspace=packages/db",
+    "db:generate": "prisma generate --schema packages/db/prisma/schema.prisma",
+    "db:migrate": "npm run db:migrate:deploy",
+    "db:migrate:deploy": "prisma migrate deploy --schema packages/db/prisma/schema.prisma",
+    "db:migrate:dev": "prisma migrate dev --schema packages/db/prisma/schema.prisma",
+    "db:push": "prisma db push --schema packages/db/prisma/schema.prisma",
+    "db:seed": "prisma db seed --schema packages/db/prisma/schema.prisma",
+    "db:studio": "prisma studio --schema packages/db/prisma/schema.prisma",
+    "db:reset": "prisma migrate reset --force --schema packages/db/prisma/schema.prisma",
+    "postinstall": "prisma generate --schema packages/db/prisma/schema.prisma",
     "zk:setup": "npm run setup --workspace=packages/zk",
     "zk:compile": "npm run compile --workspace=packages/zk",
     "zk:build": "npm run build-circuit --workspace=packages/zk",
@@ -27,11 +30,19 @@
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
+    "prisma": "^5.22.0",
     "typescript": "^5.3.3"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
       "blake-hash"
     ]
+  },
+  "dependencies": {
+    "@supabase/ssr": "^0.12.0",
+    "@supabase/supabase-js": "^2.108.2"
+  },
+  "prisma": {
+    "seed": "ts-node --project packages/db/tsconfig.json packages/db/prisma/seed.ts"
   }
 }

@@ -67,7 +67,7 @@ payrollRouter.post('/calculate', async (req, res) => {
   }
 
   const expectedPayment = grossPayment - body.penalty;
-  const commitment = await zkService.generateCommitment({
+  const commitment = await zkService.generateCommitmentForInput({
     operatorPseudoCode: operator.pseudonymousCode,
     roleCode: operator.specialization,
     processedPairs,
