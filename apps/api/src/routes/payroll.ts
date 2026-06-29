@@ -27,7 +27,13 @@ payrollRouter.get('/operators', async (_req, res) => {
     include: { operator: true },
     orderBy: { createdAt: 'desc' },
   });
-  res.json({ success: true, data: calcs });
+  const normalized = calcs.map(calc => ({
+    ...calc,
+    proofStatus: calc.proofStatus === 'GENERATING' && calc.commitmentHash
+      ? 'COMMITMENT_GENERATED'
+      : calc.proofStatus,
+  }));
+  res.json({ success: true, data: normalized });
 });
 
 // POST /api/payroll/calculate
@@ -97,7 +103,7 @@ payrollRouter.post('/calculate', async (req, res) => {
       pendingBalance,
       commitmentHash: commitment.commitmentHash,
       periodHash: commitment.periodHash,
-      proofStatus: 'GENERATING',
+      proofStatus: 'COMMITMENT_GENERATED',
       verificationMode: commitment.verificationMode,
     },
     create: {
@@ -114,7 +120,7 @@ payrollRouter.post('/calculate', async (req, res) => {
       pendingBalance,
       commitmentHash: commitment.commitmentHash,
       periodHash: commitment.periodHash,
-      proofStatus: 'GENERATING',
+      proofStatus: 'COMMITMENT_GENERATED',
       verificationMode: commitment.verificationMode,
     },
     include: { operator: true },
@@ -143,6 +149,50 @@ payrollRouter.post('/calculate', async (req, res) => {
     },
   });
 
+  await prisma.zkVerification.upsert({
+    where: { payrollCalculationId: calc.id },
+    update: {
+      commitmentHash: commitment.commitmentHash,
+      periodHash: commitment.periodHash,
+      proofStatus: 'COMMITMENT_GENERATED',
+      verificationMode: commitment.verificationMode,
+    },
+    create: {
+      payrollCalculationId: calc.id,
+      commitmentHash: commitment.commitmentHash,
+      periodHash: commitment.periodHash,
+      proofStatus: 'COMMITMENT_GENERATED',
+      verificationMode: commitment.verificationMode,
+    },
+  });
+
+  const existingProof = await prisma.zkProof.findFirst({
+    where: { payrollCalculationId: calc.id },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  if (existingProof) {
+    await prisma.zkProof.update({
+      where: { id: existingProof.id },
+      data: {
+        commitmentHash: commitment.commitmentHash,
+        commitmentField: commitment.commitmentField,
+        periodHash: commitment.periodHash,
+        proofStatus: 'COMMITMENT_GENERATED',
+      },
+    });
+  } else {
+    await prisma.zkProof.create({
+      data: {
+        payrollCalculationId: calc.id,
+        commitmentHash: commitment.commitmentHash,
+        commitmentField: commitment.commitmentField,
+        periodHash: commitment.periodHash,
+        proofStatus: 'COMMITMENT_GENERATED',
+      },
+    });
+  }
+
   await createAuditEvent({
     eventType: 'PAYROLL_CALCULATED',
     entityType: 'PayrollCalculation',
@@ -156,6 +206,7 @@ payrollRouter.post('/calculate', async (req, res) => {
       amount: expectedPayment,
       period: body.periodLabel,
       hashAlgorithm: commitment.hashAlgorithm,
+      proofStatus: 'COMMITMENT_GENERATED',
     },
   });
 

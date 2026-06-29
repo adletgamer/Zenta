@@ -28,7 +28,33 @@ export interface StellarVerifyResult {
   verificationMode: VerificationMode;
   ledger: number;
   eventConfirmed?: boolean;
+  stateConfirmed?: boolean;
+  confirmationSource?: ConfirmationSource;
+  commitmentHash?: string;
+  periodHash?: string;
   error?: string;
+}
+
+export type ConfirmationSource = 'event' | 'contract_state' | 'none' | 'simulated';
+
+export interface StellarConfirmationResult {
+  eventConfirmed: boolean;
+  stateConfirmed: boolean;
+  confirmationSource: ConfirmationSource;
+  commitmentHash?: string;
+  periodHash?: string;
+  events: DecodedStellarEvent[];
+}
+
+export interface DecodedStellarEvent {
+  txHash: string | null;
+  ledger: number | null;
+  contractId: string | null;
+  topics: string[];
+  data: string | null;
+  matchesEventName: boolean;
+  matchesCommitment: boolean;
+  matchesPeriod: boolean;
 }
 
 async function verifyPayroll(input: StellarVerifyInput): Promise<StellarVerifyResult> {
@@ -58,6 +84,10 @@ async function submitPayrollRegistryVerification(
       verificationMode: 'STELLAR_ZK_TESTNET',
       ledger: 0,
       eventConfirmed: false,
+      stateConfirmed: false,
+      confirmationSource: 'none',
+      commitmentHash: input.commitmentHash,
+      periodHash: input.periodHash,
       error: 'STELLAR_ZK_TESTNET requires a deployed Soroban Groth16 verifier; current contract is a registry only.',
     };
   }
@@ -71,6 +101,10 @@ async function submitPayrollRegistryVerification(
       verificationMode: 'STELLAR_REGISTRY_TESTNET',
       ledger: 0,
       eventConfirmed: false,
+      stateConfirmed: false,
+      confirmationSource: 'none',
+      commitmentHash: input.commitmentHash,
+      periodHash: input.periodHash,
       error: 'Missing STELLAR_CONTRACT_ID or STELLAR_SECRET_KEY for registry submission.',
     };
   }
@@ -138,7 +172,13 @@ async function verifyOnTestnet(input: PayrollRegistryVerificationInput): Promise
       throw new Error(`Stellar transaction status: ${txResult.status}`);
     }
 
-    const eventConfirmed = await confirmPayrollEvent(server, STELLAR_CONTRACT_ID, txResult.ledger, sent.hash);
+    const confirmation = await confirmPayrollRegistration({
+      txHash: sent.hash,
+      ledger: txResult.ledger,
+      contractId: STELLAR_CONTRACT_ID,
+      commitmentHash: input.commitmentHash,
+      periodHash: input.periodHash,
+    }, server);
 
     return {
       success: true,
@@ -147,7 +187,11 @@ async function verifyOnTestnet(input: PayrollRegistryVerificationInput): Promise
       status: 'STELLAR_VERIFIED',
       verificationMode: 'STELLAR_REGISTRY_TESTNET',
       ledger: txResult.ledger,
-      eventConfirmed,
+      eventConfirmed: confirmation.eventConfirmed,
+      stateConfirmed: confirmation.stateConfirmed,
+      confirmationSource: confirmation.confirmationSource,
+      commitmentHash: input.commitmentHash,
+      periodHash: input.periodHash,
     };
   } catch (err) {
     return {
@@ -158,9 +202,73 @@ async function verifyOnTestnet(input: PayrollRegistryVerificationInput): Promise
       verificationMode: 'STELLAR_REGISTRY_TESTNET',
       ledger: 0,
       eventConfirmed: false,
+      stateConfirmed: false,
+      confirmationSource: 'none',
+      commitmentHash: input.commitmentHash,
+      periodHash: input.periodHash,
       error: (err as Error).message,
     };
   }
+}
+
+async function confirmPayrollRegistration(
+  input: {
+    txHash?: string | null;
+    ledger?: number | null;
+    contractId?: string | null;
+    commitmentHash?: string | null;
+    periodHash?: string | null;
+  },
+  providedServer?: any,
+): Promise<StellarConfirmationResult> {
+  const stellar = await import('@stellar/stellar-sdk');
+  const SorobanRpc = (stellar as any).rpc || (stellar as any).SorobanRpc;
+  const server = providedServer ?? new SorobanRpc.Server(STELLAR_RPC_URL);
+  const contractId = input.contractId || STELLAR_CONTRACT_ID;
+  const eventResult = await confirmPayrollEvent(
+    server,
+    contractId,
+    input.ledger ?? 0,
+    input.txHash ?? '',
+    input.commitmentHash ?? '',
+    input.periodHash ?? '',
+  );
+  const stateConfirmed = eventResult.eventConfirmed
+    ? true
+    : await confirmContractState(server, contractId, input.commitmentHash ?? '');
+
+  const confirmationSource = eventResult.eventConfirmed
+    ? 'event'
+    : stateConfirmed ? 'contract_state' : 'none';
+
+  debugLog('stellar confirmation', {
+    txHash: input.txHash,
+    ledger: input.ledger,
+    contractId,
+    eventConfirmed: eventResult.eventConfirmed,
+    stateConfirmed,
+    confirmationSource,
+    events: eventResult.events.length,
+  });
+
+  return {
+    eventConfirmed: eventResult.eventConfirmed,
+    stateConfirmed,
+    confirmationSource,
+    commitmentHash: input.commitmentHash ?? undefined,
+    periodHash: input.periodHash ?? undefined,
+    events: eventResult.events,
+  };
+}
+
+async function diagnoseTransactionEvents(input: {
+  txHash: string;
+  ledger?: number | null;
+  contractId?: string | null;
+  commitmentHash?: string | null;
+  periodHash?: string | null;
+}): Promise<StellarConfirmationResult> {
+  return confirmPayrollRegistration(input);
 }
 
 async function confirmPayrollEvent(
@@ -168,24 +276,81 @@ async function confirmPayrollEvent(
   contractId: string,
   ledger: number,
   txHash: string,
-): Promise<boolean> {
+  commitmentHash: string,
+  periodHash: string,
+): Promise<{ eventConfirmed: boolean; events: DecodedStellarEvent[] }> {
   try {
     const response = await server.getEvents({
-      startLedger: Math.max(0, ledger - 5),
+      startLedger: Math.max(1, ledger - 10),
       filters: [{ type: 'contract', contractIds: [contractId] }],
-      limit: 20,
+      limit: 100,
     });
 
-    return response.events?.some((event: any) => {
-      const topics = event.topic ?? event.topics ?? [];
-      return event.txHash === txHash && topics.some((topic: any) => scValToString(topic) === 'payroll_verified');
-    }) ?? false;
+    const events = (response.events ?? []).map((event: any) =>
+      decodeStellarEvent(event, commitmentHash, periodHash),
+    );
+
+    const eventConfirmed = events.some((event: DecodedStellarEvent) => {
+      const sameTx = !txHash || event.txHash === txHash;
+      return sameTx && event.matchesEventName && event.matchesCommitment && event.matchesPeriod;
+    });
+
+    return { eventConfirmed, events };
   } catch {
+    return { eventConfirmed: false, events: [] };
+  }
+}
+
+async function confirmContractState(server: any, contractId: string, commitmentHash: string): Promise<boolean> {
+  if (!contractId || !commitmentHash || !STELLAR_SECRET_KEY) return false;
+
+  try {
+    const stellar = await import('@stellar/stellar-sdk');
+    const { BASE_FEE, Contract, Keypair, Networks, TransactionBuilder, xdr } = stellar;
+    const sourceKeypair = Keypair.fromSecret(STELLAR_SECRET_KEY);
+    const sourceAccount = await server.getAccount(sourceKeypair.publicKey());
+    const contract = new Contract(contractId);
+    const tx = new TransactionBuilder(sourceAccount, {
+      fee: BASE_FEE,
+      networkPassphrase: Networks.TESTNET,
+    })
+      .addOperation(contract.call('is_verified', xdr.ScVal.scvBytes(fieldToBytes32(commitmentHash))))
+      .setTimeout(60)
+      .build();
+
+    const simulated = await server.simulateTransaction(tx);
+    return scValToBoolean((simulated as any).result?.retval ?? (simulated as any).results?.[0]?.xdr);
+  } catch (err) {
+    debugLog('stellar state confirmation failed', { error: (err as Error).message });
     return false;
   }
 }
 
+function decodeStellarEvent(event: any, commitmentHash: string, periodHash: string): DecodedStellarEvent {
+  // PayrollRegistry emits topics (Symbol("payroll_verified"), commitment: BytesN<32>)
+  // and data period_hash: BytesN<32>.
+  const topics = (event.topic ?? event.topics ?? []).map((topic: any) => scValToString(topic));
+  const data = scValToString(event.value ?? event.data ?? null) || null;
+  const normalizedCommitment = normalizeHex32(commitmentHash);
+  const normalizedPeriod = normalizeHex32(periodHash);
+
+  return {
+    txHash: event.txHash ?? event.transactionHash ?? event.tx_hash ?? null,
+    ledger: Number(event.ledger ?? event.ledgerSeq ?? event.ledgerSequence ?? 0) || null,
+    contractId: event.contractId ?? event.contract_id ?? null,
+    topics,
+    data,
+    matchesEventName: topics.includes('payroll_verified'),
+    matchesCommitment: !normalizedCommitment || topics.some((topic: string) => normalizeHex32(topic) === normalizedCommitment),
+    matchesPeriod: !normalizedPeriod || normalizeHex32(data) === normalizedPeriod,
+  };
+}
+
 function scValToString(value: any): string {
+  if (!value) return '';
+
+  if (typeof value === 'string') return value;
+
   if (typeof value?.sym === 'function') {
     return value.sym().toString();
   }
@@ -195,10 +360,39 @@ function scValToString(value: any): string {
   }
 
   if (typeof value?.bytes === 'function') {
-    return Buffer.from(value.bytes()).toString('hex');
+    return `0x${Buffer.from(value.bytes()).toString('hex')}`;
+  }
+
+  if (typeof value?.switch === 'function' && value.switch().name === 'scvBytes' && typeof value.bytes === 'function') {
+    return `0x${Buffer.from(value.bytes()).toString('hex')}`;
   }
 
   return '';
+}
+
+function scValToBoolean(value: any): boolean {
+  if (!value) return false;
+  if (typeof value === 'boolean') return value;
+  if (typeof value?.b === 'function') return Boolean(value.b());
+  if (typeof value?.switch === 'function' && value.switch().name === 'scvBool' && typeof value.b === 'function') {
+    return Boolean(value.b());
+  }
+  return false;
+}
+
+function normalizeHex32(value: string | null | undefined): string {
+  if (!value) return '';
+  try {
+    const bigint = value.startsWith('0x') ? BigInt(value) : BigInt(`0x${value}`);
+    return `0x${bigint.toString(16).padStart(64, '0').slice(-64)}`;
+  } catch {
+    return value.toLowerCase();
+  }
+}
+
+function debugLog(message: string, data: Record<string, unknown>): void {
+  if (process.env.APP_ENV !== 'development') return;
+  console.info(`[stellar] ${message}`, data);
 }
 
 function simulateVerification(input: PayrollRegistryVerificationInput): StellarVerifyResult {
@@ -215,7 +409,16 @@ function simulateVerification(input: PayrollRegistryVerificationInput): StellarV
     verificationMode: 'SIMULATED',
     ledger: Math.floor(Math.random() * 1000000) + 50000000,
     eventConfirmed: true,
+    stateConfirmed: true,
+    confirmationSource: 'simulated',
+    commitmentHash: input.commitmentHash,
+    periodHash: input.periodHash,
   };
 }
 
-export const stellarService = { submitPayrollRegistryVerification, verifyPayroll };
+export const stellarService = {
+  submitPayrollRegistryVerification,
+  verifyPayroll,
+  confirmPayrollRegistration,
+  diagnoseTransactionEvents,
+};

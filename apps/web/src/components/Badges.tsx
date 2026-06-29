@@ -33,6 +33,7 @@ export function PriorityBadge({ priority }: { priority: string }) {
 export function ProofStatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
     NOT_GENERATED: 'badge badge-proof-not-generated',
+    COMMITMENT_GENERATED: 'badge badge-proof-generated',
     GENERATING: 'badge badge-proof-generating',
     GENERATED: 'badge badge-proof-generated',
     VERIFYING: 'badge badge-proof-verifying',
@@ -41,6 +42,7 @@ export function ProofStatusBadge({ status }: { status: string }) {
   };
   const labels: Record<string, string> = {
     NOT_GENERATED: 'Not Generated',
+    COMMITMENT_GENERATED: 'Commitment',
     GENERATING: 'Generating...',
     GENERATED: 'Generated',
     VERIFYING: 'Verifying...',

@@ -5,6 +5,7 @@ const NAV_ITEMS = [
   { path: '/operators', label: 'Empleados', icon: 'E' },
   { path: '/payroll', label: 'Nomina', icon: 'N' },
   { path: '/zk', label: 'Auditoria ZK', icon: 'ZK' },
+  { path: '/admin', label: 'Admin', icon: 'A' },
 ];
 
 const PAGE_TITLES: Record<string, string> = {
@@ -15,6 +16,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/payroll': 'Nomina',
   '/audit': 'Audit Log',
   '/zk': 'ZK Verification Center',
+  '/admin': 'Admin Console',
 };
 
 export function Layout({ children }: { children: React.ReactNode }) {
@@ -48,7 +50,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <div className="sidebar-bottom">
           <div className="sidebar-version-tag">v1.0.0 - MVP</div>
           <div style={{ fontSize: '10px', color: 'var(--color-on-surface-dim)', marginTop: '4px' }}>
-            SIMULATED first, Circom later
+            Circom + Poseidon active
           </div>
         </div>
       </aside>
@@ -57,8 +59,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <header className="app-topbar">
           <span className="topbar-page-title">{pageTitle}</span>
           <span className="topbar-spacer" />
-          <span className={`topbar-badge ${verificationMode === 'STELLAR_TESTNET' ? 'stellar' : 'simulated'}`}>
-            ZK {verificationMode === 'STELLAR_TESTNET' ? 'Stellar Testnet' : 'Simulated Mode'}
+          <span className={`topbar-badge ${verificationMode === 'SIMULATED' ? 'simulated' : 'stellar'}`}>
+            ZK {verificationMode === 'SIMULATED' ? 'Simulated Mode' : 'Stellar Testnet'}
           </span>
         </header>
 

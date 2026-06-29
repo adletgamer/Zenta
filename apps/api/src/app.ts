@@ -10,6 +10,7 @@ import { ratesRouter } from './routes/rates';
 import { payrollRouter } from './routes/payroll';
 import { auditRouter } from './routes/audit';
 import { zkRouter } from './routes/zk';
+import { stellarRouter } from './routes/stellar';
 
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 
@@ -44,18 +45,24 @@ export function createApp() {
   app.use('/api/payroll', payrollRouter);
   app.use('/api/audit', auditRouter);
   app.use('/api/zk', zkRouter);
+  app.use('/api/stellar', stellarRouter);
 
-  app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  const errorHandler: express.ErrorRequestHandler = (err, _req, res, _next) => {
     console.error('[ERROR]', err.message, err.stack);
-    res.status(500).json({
+    res.statusCode = 500;
+    res.json({
       success: false,
       error: err.message || 'Internal server error',
     });
-  });
+  };
 
-  app.use((_req, res) => {
-    res.status(404).json({ success: false, error: 'Route not found' });
-  });
+  const notFoundHandler: express.RequestHandler = (_req, res) => {
+    res.statusCode = 404;
+    res.json({ success: false, error: 'Route not found' });
+  };
+
+  app.use(errorHandler);
+  app.use(notFoundHandler);
 
   return app;
 }

@@ -1,0 +1,15 @@
+.git
+.vercel
+.pnpm-store
+node_modules
+**/node_modules
+dist
+**/dist
+.env
+.env.*
+!.env.example
+packages/zk/build/*.r1cs
+packages/zk/build/*.sym
+packages/zk/build/*.wtns
+packages/zk/build/proof.json
+packages/zk/build/public.json

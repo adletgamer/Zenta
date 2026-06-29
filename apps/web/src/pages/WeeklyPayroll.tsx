@@ -5,6 +5,10 @@ import { operatorsApi } from '../api/operators';
 import { ProofStatusBadge, PaymentMethodBadge } from '../components/Badges';
 import { KpiSkeleton, TableSkeleton, Toast } from '../components/Status';
 
+function stellarExplorerUrl(txHash: string): string {
+  return `https://stellar.expert/explorer/testnet/tx/${txHash}`;
+}
+
 export function WeeklyPayroll() {
   const { data: summaryRes, loading: summaryLoading, error: summaryError, refetch: refetchSummary } = useApi(() => payrollApi.summary());
   const { data: calcsRes, loading: calcsLoading, error: calcsError, refetch: refetchCalcs } = useApi(() => payrollApi.operators());
@@ -159,7 +163,22 @@ export function WeeklyPayroll() {
                     ${calc.pendingBalance.toFixed(2)}
                   </span>
                 </td>
-                <td><ProofStatusBadge status={calc.proofStatus} /></td>
+                <td>
+                  <div className="payroll-zk-cell">
+                    <ProofStatusBadge status={calc.proofStatus} />
+                    {calc.stellarTxHash ? (
+                      <a
+                        className="hash-link"
+                        href={stellarExplorerUrl(calc.stellarTxHash)}
+                        target="_blank"
+                        rel="noreferrer"
+                        title={calc.stellarTxHash}
+                      >
+                        Stellar TX
+                      </a>
+                    ) : null}
+                  </div>
+                </td>
                 <td className="text-center">
                   {calc.pendingBalance > 0 && (
                     <button className="btn btn-sm btn-primary" disabled={payingLoading} onClick={() => { setSelectedCalc(calc); setPayForm({ amount: calc.pendingBalance, method: 'CASH', reference: '', notes: '' }); setShowPayment(true); setActionError(null); }}>

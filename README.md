@@ -341,6 +341,9 @@ What is real now:
 - The public inputs are `commitment` and `period_hash`.
 - Proof generation and off-chain verification are real Groth16 flows.
 - The existing Stellar contract registers an already-verified commitment and confirms the `payroll_verified` event.
+- The registry confirmation is intentionally V1-scoped: Circom/Poseidon and Groth16 are real off-chain, while Soroban records the verified commitment after off-chain verification.
+- The current Soroban event format is topics `(Symbol("payroll_verified"), commitment: BytesN<32>)` with data `period_hash: BytesN<32>`.
+- API responses separate `eventConfirmed` from `stateConfirmed`. If event lookup is delayed but `is_verified(commitment)` returns true, the response uses `confirmationSource: "contract_state"`.
 
 Verification modes:
 
@@ -366,6 +369,8 @@ POST /api/zk/verify-offchain
 POST /api/zk/verify-on-stellar
 GET  /api/zk/verifications
 GET  /api/zk/proofs/:id
+GET  /api/stellar/admin-status
+GET  /api/stellar/tx/:txHash/events
 ```
 
 Proof artifacts are generated under `packages/zk/build/`. These artifacts use a deterministic local development contribution and are suitable for the hackathon MVP unless replaced by ceremony-produced proving artifacts.

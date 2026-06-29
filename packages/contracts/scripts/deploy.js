@@ -98,7 +98,7 @@ async function main() {
   console.log('\n📝 Add to .env:');
   console.log(`   STELLAR_CONTRACT_ID=${contractId}`);
   console.log(`   STELLAR_NETWORK=${NETWORK}`);
-  console.log('   VERIFICATION_MODE=STELLAR_TESTNET');
+  console.log('   VERIFICATION_MODE=STELLAR_REGISTRY_TESTNET');
 }
 
 main().catch(e => {

@@ -39,7 +39,7 @@ export function Dashboard() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Zenta Verification Dashboard</h1>
-          <p className="page-subtitle">Payroll commitments, simulated ZK proofs, and Stellar-ready verification.</p>
+          <p className="page-subtitle">Payroll commitments, real Groth16 proofs, and Stellar testnet registry verification.</p>
         </div>
       </div>
 
@@ -56,26 +56,26 @@ export function Dashboard() {
         <div className="kpi-card">
           <div className="kpi-label">Pruebas ZK Generadas</div>
           <div className="kpi-value">{loading ? '-' : zkSummary?.generatedProofs || 0}</div>
-          <div className="kpi-meta">Offchain proof envelopes</div>
+          <div className="kpi-meta">Circom + Groth16 proofs</div>
         </div>
         <div className="kpi-card verified">
           <div className="kpi-label">Pruebas Verificadas Onchain</div>
           <div className="kpi-value">{loading ? '-' : zkSummary?.verifiedOnchain || 0}</div>
-          <div className="kpi-meta">SIMULATED Stellar registry</div>
+          <div className="kpi-meta">Stellar testnet registry</div>
         </div>
         <div className="kpi-card">
           <div className="kpi-label">Ultimo Commitment Hash</div>
           <div className="kpi-value hash-kpi">
             {zkSummary?.latestCommitmentHash ? shortHash(zkSummary.latestCommitmentHash) : 'None'}
           </div>
-          <div className="kpi-meta">POSEIDON_SIMULATED</div>
+          <div className="kpi-meta">Poseidon commitment</div>
         </div>
       </div>
 
       <div className="table-container">
         <div className="table-header">
           <span className="table-title">Payroll Verification Queue</span>
-          <span className="badge badge-simulated">SIMULATED</span>
+          <span className="badge badge-proof-verified">REAL ZK</span>
         </div>
         <table>
           <thead>
@@ -112,8 +112,9 @@ function QueueRow({ item, actionLoading, onAction }: {
   onAction: (action: () => Promise<unknown>, label: string) => void;
 }) {
   const canCommit = !item.commitmentHash;
-  const canProof = item.proofStatus === 'GENERATING';
-  const canVerify = item.proofStatus === 'GENERATED';
+  const canProof = item.proofStatus === 'COMMITMENT_GENERATED';
+  const canVerifyOffchain = item.proofStatus === 'GENERATED';
+  const canRegisterStellar = item.proofStatus === 'OFFCHAIN_VERIFIED';
   const actionId = `${item.proofStatus}-${item.id}`;
 
   return (
@@ -141,12 +142,17 @@ function QueueRow({ item, actionLoading, onAction }: {
             {actionLoading === actionId ? 'Generating...' : 'Generar Proof'}
           </button>
         )}
-        {canVerify && (
-          <button className="btn btn-sm btn-primary" disabled={actionLoading === actionId} onClick={() => onAction(() => zkApi.verifyOnStellar(item.id), actionId)}>
-            {actionLoading === actionId ? 'Verifying...' : 'Verificar'}
+        {canVerifyOffchain && (
+          <button className="btn btn-sm btn-secondary" disabled={actionLoading === actionId} onClick={() => onAction(() => zkApi.verifyOffchain(item.id), actionId)}>
+            {actionLoading === actionId ? 'Checking...' : 'Verificar Off-chain'}
           </button>
         )}
-        {!canCommit && !canProof && !canVerify && <span className="text-muted text-xs">Ready</span>}
+        {canRegisterStellar && (
+          <button className="btn btn-sm btn-primary" disabled={actionLoading === actionId} onClick={() => onAction(() => zkApi.verifyOnStellar(item.id), actionId)}>
+            {actionLoading === actionId ? 'Registering...' : 'Registrar Stellar'}
+          </button>
+        )}
+        {!canCommit && !canProof && !canVerifyOffchain && !canRegisterStellar && <span className="text-muted text-xs">Ready</span>}
       </td>
     </tr>
   );

@@ -2,8 +2,10 @@ import { api, ApiResponse } from './client';
 
 export interface ZkVerification {
   id: string;
+  zkProofId: string;
   payrollCalculationId: string;
   commitmentHash: string;
+  commitmentField: string | null;
   periodHash: string;
   proofStatus: string;
   proofData: string | null;
@@ -11,8 +13,23 @@ export interface ZkVerification {
   verificationMode: string;
   stellarTxHash: string | null;
   stellarContractId: string | null;
+  ledger: number | null;
+  eventConfirmed: boolean;
+  stateConfirmed?: boolean;
+  confirmationSource?: string;
   verifiedAt: string | null;
+  generatedAt: string | null;
+  verifiedOffchainAt: string | null;
   createdAt: string;
+  proofSystem: string;
+  circuit: string;
+  commitmentScheme: string;
+  circuitVersion?: {
+    name: string;
+    version: string;
+    provingKeyPath: string | null;
+    verifyingKeyPath: string | null;
+  } | null;
   payrollCalculation?: {
     periodLabel: string;
     expectedPayment: number;
@@ -62,6 +79,8 @@ export const zkApi = {
     api.post<ApiResponse<unknown>>('/api/zk/generate-commitment', { payrollCalculationId }),
   generateProof: (payrollCalculationId: string) =>
     api.post<ApiResponse<unknown>>('/api/zk/generate-proof', { payrollCalculationId }),
+  verifyOffchain: (payrollCalculationId: string) =>
+    api.post<ApiResponse<unknown>>('/api/zk/verify-offchain', { payrollCalculationId }),
   verifyOnStellar: (payrollCalculationId: string) =>
     api.post<ApiResponse<unknown>>('/api/zk/verify-on-stellar', { payrollCalculationId }),
 };

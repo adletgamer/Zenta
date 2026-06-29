@@ -1,12 +1,15 @@
 import { useState } from 'react';
 import { useApi } from '../hooks/useApi';
 import { lotsApi, Lot } from '../api/lots';
+import { operatorsApi } from '../api/operators';
 import { StageBadge, PriorityBadge } from '../components/Badges';
 import { KpiSkeleton, TableSkeleton, Toast } from '../components/Status';
 
 export function ProductionPlanning() {
   const { data: lotsRes, loading, error, refetch } = useApi(() => lotsApi.list());
+  const { data: operatorsRes, loading: operatorsLoading } = useApi(() => operatorsApi.list());
   const lots = lotsRes?.data || [];
+  const operators = operatorsRes?.data || [];
   const [showModal, setShowModal] = useState(false);
   const [advancingLot, setAdvancingLot] = useState<Lot | null>(null);
   const [creating, setCreating] = useState(false);
@@ -21,7 +24,7 @@ export function ProductionPlanning() {
     estimatedMaterial: 450, estimatedLaborHours: 12,
   });
 
-  const [advanceForm, setAdvanceForm] = useState({ processedPairs: 0, notes: '' });
+  const [advanceForm, setAdvanceForm] = useState({ operatorId: '', processedPairs: 0, notes: '' });
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -45,7 +48,11 @@ export function ProductionPlanning() {
     setAdvancing(true);
     setActionError(null);
     try {
-      await lotsApi.advance(advancingLot.id, { processedPairs: Number(advanceForm.processedPairs), notes: advanceForm.notes });
+      await lotsApi.advance(advancingLot.id, {
+        operatorId: advanceForm.operatorId,
+        processedPairs: Number(advanceForm.processedPairs),
+        notes: advanceForm.notes,
+      });
       setAdvancingLot(null);
       setToast('Lot advanced successfully');
       await refetch();
@@ -131,7 +138,7 @@ export function ProductionPlanning() {
                     <button
                       className="btn btn-sm btn-secondary"
                       disabled={advancing}
-                      onClick={() => { setAdvancingLot(lot); setAdvanceForm({ processedPairs: lot.totalPairs, notes: '' }); setActionError(null); }}
+                      onClick={() => { setAdvancingLot(lot); setAdvanceForm({ operatorId: '', processedPairs: lot.totalPairs, notes: '' }); setActionError(null); }}
                     >
                       Advance → {getNextStage(lot.currentStage).replace('_',' ')}
                     </button>
@@ -224,6 +231,22 @@ export function ProductionPlanning() {
             {actionError && <div className="error-banner">{actionError}</div>}
             <form className="modal-form" onSubmit={handleAdvance}>
               <div className="form-group">
+                <label className="form-label">Operator</label>
+                <select
+                  className="form-select"
+                  value={advanceForm.operatorId}
+                  onChange={e => setAdvanceForm(f => ({ ...f, operatorId: e.target.value }))}
+                  required
+                >
+                  <option value="">Select operator...</option>
+                  {operators.map(operator => (
+                    <option key={operator.id} value={operator.id}>
+                      {operator.displayName} - {operator.specialization.replace('_', ' ')}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="form-group">
                 <label className="form-label">Processed Pairs</label>
                 <input type="number" className="form-input" value={advanceForm.processedPairs} min={0} max={advancingLot.totalPairs}
                   onChange={e => setAdvanceForm(f => ({ ...f, processedPairs: Number(e.target.value) }))} />
@@ -235,7 +258,7 @@ export function ProductionPlanning() {
               </div>
               <div className="modal-footer">
                 <button type="button" className="btn btn-ghost" onClick={() => setAdvancingLot(null)}>Cancel</button>
-                <button type="submit" className="btn btn-primary" disabled={advancing}>
+                <button type="submit" className="btn btn-primary" disabled={advancing || operatorsLoading || !advanceForm.operatorId}>
                   {advancing ? 'Advancing…' : 'Advance Stage'}
                 </button>
               </div>

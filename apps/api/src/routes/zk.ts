@@ -54,10 +54,53 @@ zkRouter.get('/queue', async (_req, res) => {
 });
 
 zkRouter.get('/verifications', async (_req, res) => {
-  const verifications = await prisma.onchainVerification.findMany({
+  const proofs = await prisma.zkProof.findMany({
     orderBy: { createdAt: 'desc' },
-    include: { zkProof: { include: { payrollCalculation: { include: { operator: true } } } } },
+    include: {
+      circuitVersion: true,
+      onchainVerification: true,
+      payrollCalculation: { include: { operator: true, zkCommitment: true } },
+    },
   });
+
+  const verifications = proofs.map(proof => ({
+    id: proof.id,
+    zkProofId: proof.id,
+    payrollCalculationId: proof.payrollCalculationId,
+    commitmentHash: proof.commitmentHash,
+    commitmentField: proof.commitmentField,
+    periodHash: proof.periodHash,
+    proofStatus: proof.onchainVerification?.status === 'STELLAR_VERIFIED'
+      ? 'VERIFIED'
+      : proof.proofStatus,
+    proofData: proof.proofJson ? JSON.stringify(proof.proofJson) : null,
+    publicSignals: proof.publicSignals ? JSON.stringify(proof.publicSignals) : null,
+    verificationMode: proof.onchainVerification?.verificationMode
+      ?? proof.payrollCalculation.verificationMode,
+    stellarTxHash: proof.onchainVerification?.stellarTxHash
+      ?? proof.payrollCalculation.stellarTxHash,
+    stellarContractId: proof.onchainVerification?.contractId
+      ?? proof.payrollCalculation.stellarContractId,
+    ledger: proof.onchainVerification?.ledger ?? null,
+    eventConfirmed: proof.onchainVerification?.eventConfirmed ?? false,
+    stateConfirmed: proof.onchainVerification?.status === 'STELLAR_VERIFIED'
+      ? true
+      : false,
+    confirmationSource: proof.onchainVerification?.eventConfirmed
+      ? 'event'
+      : proof.onchainVerification?.status === 'STELLAR_VERIFIED' ? 'contract_state' : 'none',
+    verifiedAt: proof.onchainVerification?.verifiedAt
+      ?? proof.verifiedOffchainAt
+      ?? proof.payrollCalculation.verifiedAt,
+    generatedAt: proof.generatedAt,
+    verifiedOffchainAt: proof.verifiedOffchainAt,
+    circuitVersion: proof.circuitVersion,
+    payrollCalculation: proof.payrollCalculation,
+    proofSystem: 'Groth16',
+    circuit: 'Circom payroll.circom',
+    commitmentScheme: 'Poseidon',
+  }));
+
   res.json({ success: true, data: verifications });
 });
 
@@ -155,7 +198,11 @@ zkRouter.post('/verify-on-stellar', async (req, res) => {
     status: result.onchainVerification.status,
     stellarTxHash: result.onchainVerification.stellarTxHash,
     ledger: result.onchainVerification.ledger,
-    eventConfirmed: result.onchainVerification.eventConfirmed,
+    eventConfirmed: result.stellar.eventConfirmed ?? result.onchainVerification.eventConfirmed,
+    stateConfirmed: result.stellar.stateConfirmed ?? false,
+    confirmationSource: result.stellar.confirmationSource ?? 'none',
+    commitmentHash: result.stellar.commitmentHash ?? result.onchainVerification.commitmentHash,
+    periodHash: result.stellar.periodHash ?? result.onchainVerification.periodHash,
     contractId: result.onchainVerification.contractId,
   });
 });

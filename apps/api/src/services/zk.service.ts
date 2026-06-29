@@ -27,17 +27,40 @@ interface CommitmentArtifacts {
   hashAlgorithm: 'POSEIDON';
 }
 
-const WASM_PATH = process.env.ZK_WASM_PATH
-  ? path.resolve(process.cwd(), process.env.ZK_WASM_PATH)
-  : path.resolve(__dirname, '../../../../packages/zk/build/payroll_js/payroll.wasm');
+const REPO_ROOT = path.resolve(__dirname, '../../../../');
 
-const ZKEY_PATH = process.env.ZK_ZKEY_PATH
-  ? path.resolve(process.cwd(), process.env.ZK_ZKEY_PATH)
-  : path.resolve(__dirname, '../../../../packages/zk/build/payroll_final.zkey');
+function resolveArtifactPath(configuredPath: string | undefined, fallbackFromRoot: string): string {
+  if (!configuredPath) {
+    return path.resolve(REPO_ROOT, fallbackFromRoot);
+  }
 
-const VKEY_PATH = process.env.ZK_VKEY_PATH
-  ? path.resolve(process.cwd(), process.env.ZK_VKEY_PATH)
-  : path.resolve(__dirname, '../../../../packages/zk/build/verification_key.json');
+  const normalized = configuredPath.trim().replace(/^['"]|['"]$/g, '');
+  if (path.isAbsolute(normalized)) {
+    return normalized;
+  }
+
+  const cwdPath = path.resolve(process.cwd(), normalized);
+  if (fs.existsSync(cwdPath)) {
+    return cwdPath;
+  }
+
+  return path.resolve(REPO_ROOT, normalized);
+}
+
+const WASM_PATH = resolveArtifactPath(
+  process.env.ZK_WASM_PATH,
+  'packages/zk/build/payroll_js/payroll.wasm',
+);
+
+const ZKEY_PATH = resolveArtifactPath(
+  process.env.ZK_ZKEY_PATH,
+  'packages/zk/build/payroll_final.zkey',
+);
+
+const VKEY_PATH = resolveArtifactPath(
+  process.env.ZK_VKEY_PATH,
+  'packages/zk/build/verification_key.json',
+);
 
 let poseidonPromise: Promise<Poseidon> | null = null;
 let snarkjsPromise: Promise<typeof import('snarkjs')> | null = null;

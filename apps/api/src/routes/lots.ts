@@ -100,6 +100,15 @@ lotsRouter.patch('/:id/advance', async (req, res) => {
   const currentIndex = STAGE_ORDER.indexOf(lot.currentStage);
   const nextStage = STAGE_ORDER[currentIndex + 1];
   const isCompleted = nextStage === 'COMPLETED';
+  if (!nextStage) {
+    return res.status(400).json({ success: false, error: 'Invalid lot stage' });
+  }
+
+  if (body.operatorId) {
+    const operator = await prisma.operator.findUnique({ where: { id: body.operatorId } });
+    if (!operator) return res.status(404).json({ success: false, error: 'Operator not found' });
+    if (!operator.active) return res.status(400).json({ success: false, error: 'Operator is inactive' });
+  }
 
   const updated = await prisma.productionLot.update({
     where: { id: lot.id },
