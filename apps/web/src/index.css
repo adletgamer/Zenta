@@ -1008,7 +1008,7 @@ tbody td.text-muted { color: var(--color-on-surface-muted); }
   box-shadow: var(--shadow-sm);
 }
 
-/* ---- Admin Console ---------------------------------------- */
+/* ---- System Status ---------------------------------------- */
 .admin-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

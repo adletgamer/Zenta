@@ -23,5 +23,6 @@ export interface StellarAdminStatus {
 }
 
 export const stellarApi = {
-  adminStatus: () => api.get<ApiResponse<StellarAdminStatus>>('/api/stellar/admin-status'),
+  status: () => api.get<ApiResponse<StellarAdminStatus>>('/api/stellar/status'),
+  adminStatus: () => api.get<ApiResponse<StellarAdminStatus>>('/api/stellar/status'),
 };

@@ -36,7 +36,7 @@ async function getNativeBalance(publicKey: string): Promise<string | null> {
   return account.balances?.find(balance => balance.asset_type === 'native')?.balance ?? null;
 }
 
-stellarRouter.get('/admin-status', async (_req, res) => {
+async function getStellarStatus() {
   const secretKey = trimEnv(process.env.STELLAR_SECRET_KEY);
   const publicKey = await deriveAdminPublicKey(secretKey);
   const network = trimEnv(process.env.STELLAR_NETWORK, 'testnet');
@@ -90,30 +90,35 @@ stellarRouter.get('/admin-status', async (_req, res) => {
       }).catch(() => null)
     : null;
 
-  res.json({
-    success: true,
-    data: {
-      configured,
-      health: configured ? 'READY' : 'MISSING_CONFIGURATION',
-      publicKey,
-      network,
-      rpcUrl,
-      horizonUrl: HORIZON_TESTNET_URL,
-      contractId,
-      verificationMode,
-      balance,
-      latestTxHash,
-      latestLedger,
-      latestStatus,
-      eventConfirmed: confirmation?.eventConfirmed ?? latestVerification?.eventConfirmed ?? false,
-      stateConfirmed: confirmation?.stateConfirmed ?? false,
-      confirmationSource: confirmation?.confirmationSource ?? 'none',
-      commitmentHash: latestVerification?.commitmentHash ?? null,
-      periodHash: latestVerification?.periodHash ?? null,
-      latestSubmittedAt: latestVerification?.submittedAt ?? latestSubmission?.submittedAt ?? null,
-      latestVerifiedAt: latestVerification?.verifiedAt ?? null,
-    },
-  });
+  return {
+    configured,
+    health: configured ? 'READY' : 'MISSING_CONFIGURATION',
+    publicKey,
+    network,
+    rpcUrl,
+    horizonUrl: HORIZON_TESTNET_URL,
+    contractId,
+    verificationMode,
+    balance,
+    latestTxHash,
+    latestLedger,
+    latestStatus,
+    eventConfirmed: confirmation?.eventConfirmed ?? latestVerification?.eventConfirmed ?? false,
+    stateConfirmed: confirmation?.stateConfirmed ?? false,
+    confirmationSource: confirmation?.confirmationSource ?? 'none',
+    commitmentHash: latestVerification?.commitmentHash ?? null,
+    periodHash: latestVerification?.periodHash ?? null,
+    latestSubmittedAt: latestVerification?.submittedAt ?? latestSubmission?.submittedAt ?? null,
+    latestVerifiedAt: latestVerification?.verifiedAt ?? null,
+  };
+}
+
+stellarRouter.get('/status', async (_req, res) => {
+  res.json({ success: true, data: await getStellarStatus() });
+});
+
+stellarRouter.get('/admin-status', async (_req, res) => {
+  res.json({ success: true, data: await getStellarStatus() });
 });
 
 stellarRouter.get('/tx/:txHash/events', async (req, res) => {

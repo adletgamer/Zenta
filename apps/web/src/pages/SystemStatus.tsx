@@ -24,8 +24,8 @@ function confirmationMessage(status: {
   return 'No Stellar confirmation found';
 }
 
-export function Admin() {
-  const { data: statusRes, loading: statusLoading, error: statusError, refetch } = useApi(() => stellarApi.adminStatus());
+export function SystemStatus() {
+  const { data: statusRes, loading: statusLoading, error: statusError, refetch } = useApi(() => stellarApi.status());
   const { data: zkSummaryRes, loading: zkLoading } = useApi(() => zkApi.summary());
   const status = statusRes?.data;
   const zkSummary = zkSummaryRes?.data;
@@ -34,8 +34,8 @@ export function Admin() {
     <div>
       <div className="page-header">
         <div>
-          <h1 className="page-title">Admin Console</h1>
-          <p className="page-subtitle">Wallet, Stellar registry, ZK circuit, and deployment health.</p>
+          <h1 className="page-title">Estado del Sistema</h1>
+          <p className="page-subtitle">Wallet de firma, registro Stellar, circuito ZK y salud del despliegue.</p>
         </div>
         <button className="btn btn-secondary" onClick={refetch} disabled={statusLoading}>
           {statusLoading ? 'Refreshing...' : 'Refresh'}
@@ -48,7 +48,7 @@ export function Admin() {
         <section className="admin-panel admin-panel-primary">
           <div className="admin-panel-header">
             <div>
-              <div className="card-title">Admin Wallet</div>
+              <div className="card-title">Wallet de Firma</div>
               <div className="card-subtitle">Public signer for Stellar registry submissions</div>
             </div>
             <span className={`badge ${status?.configured ? 'badge-proof-verified' : 'badge-proof-failed'}`}>
@@ -59,9 +59,9 @@ export function Admin() {
             {statusLoading ? 'Loading wallet...' : status?.publicKey || 'Not configured'}
           </div>
           <div className="admin-metric-row">
-            <AdminMetric label="Balance" value={status?.balance ? `${Number(status.balance).toFixed(4)} XLM` : '-'} />
-            <AdminMetric label="Network" value={status?.network || '-'} />
-            <AdminMetric label="Mode" value={status?.verificationMode || '-'} />
+            <StatusMetric label="Balance" value={status?.balance ? `${Number(status.balance).toFixed(4)} XLM` : '-'} />
+            <StatusMetric label="Network" value={status?.network || '-'} />
+            <StatusMetric label="Mode" value={status?.verificationMode || '-'} />
           </div>
         </section>
 
@@ -121,7 +121,7 @@ export function Admin() {
   );
 }
 
-function AdminMetric({ label, value }: { label: string; value: string }) {
+function StatusMetric({ label, value }: { label: string; value: string }) {
   return (
     <div className="admin-metric">
       <div className="text-xs text-muted">{label}</div>

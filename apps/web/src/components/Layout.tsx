@@ -5,7 +5,7 @@ const NAV_ITEMS = [
   { path: '/operators', label: 'Empleados', icon: 'E' },
   { path: '/payroll', label: 'Nomina', icon: 'N' },
   { path: '/zk', label: 'Auditoria ZK', icon: 'ZK' },
-  { path: '/admin', label: 'Admin', icon: 'A' },
+  { path: '/system', label: 'Sistema', icon: 'S' },
 ];
 
 const PAGE_TITLES: Record<string, string> = {
@@ -16,7 +16,8 @@ const PAGE_TITLES: Record<string, string> = {
   '/payroll': 'Nomina',
   '/audit': 'Audit Log',
   '/zk': 'ZK Verification Center',
-  '/admin': 'Admin Console',
+  '/system': 'Estado del Sistema',
+  '/admin': 'Estado del Sistema',
 };
 
 export function Layout({ children }: { children: React.ReactNode }) {

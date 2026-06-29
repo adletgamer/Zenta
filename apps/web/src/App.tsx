@@ -5,7 +5,7 @@ import { OperatorAssignment } from './pages/OperatorAssignment';
 import { WeeklyPayroll } from './pages/WeeklyPayroll';
 import { AuditLog } from './pages/AuditLog';
 import { ZkVerification } from './pages/ZkVerification';
-import { Admin } from './pages/Admin';
+import { SystemStatus } from './pages/SystemStatus';
 
 export default function App() {
   return (
@@ -19,7 +19,8 @@ export default function App() {
           <Route path="/payroll" element={<WeeklyPayroll />} />
           <Route path="/audit" element={<AuditLog />} />
           <Route path="/zk" element={<ZkVerification />} />
-          <Route path="/admin" element={<Admin />} />
+          <Route path="/system" element={<SystemStatus />} />
+          <Route path="/admin" element={<Navigate to="/system" replace />} />
         </Routes>
       </Layout>
     </BrowserRouter>
