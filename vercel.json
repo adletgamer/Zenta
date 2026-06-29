@@ -3,7 +3,7 @@
   "outputDirectory": "apps/web/dist",
   "functions": {
     "api/[...path].ts": {
-      "includeFiles": "packages/zk/build/**"
+      "includeFiles": "{packages/zk/build/**,node_modules/@stellar/**,node_modules/.pnpm/{@stellar+*,smol-toml@*,@noble+*,base32.js@*,bignumber.js@*,feaxios@*,eventsource@*,axios@*}/**}"
     }
   },
   "rewrites": [

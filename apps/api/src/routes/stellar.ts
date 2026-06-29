@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
+import { derivePublicKeyFromSecret } from '../lib/stellar-keypair';
 import { buildEnvDiagnostics, getStellarEnv } from '../lib/stellar-env';
 import { stellarService } from '../services/stellar.service';
 
@@ -7,15 +8,10 @@ export const stellarRouter = Router();
 
 const HORIZON_TESTNET_URL = 'https://horizon-testnet.stellar.org';
 
-async function importStellarSdk(): Promise<any> {
-  return new Function('specifier', 'return import(specifier)')('@stellar/stellar-sdk');
-}
-
-async function derivePublicKey(secretKey: string): Promise<{ publicKey: string | null; error: string | null }> {
+function derivePublicKey(secretKey: string): { publicKey: string | null; error: string | null } {
   if (!secretKey) return { publicKey: null, error: null };
   try {
-    const { Keypair } = await importStellarSdk();
-    return { publicKey: Keypair.fromSecret(secretKey).publicKey(), error: null };
+    return { publicKey: derivePublicKeyFromSecret(secretKey), error: null };
   } catch (err) {
     return { publicKey: null, error: (err as Error).message };
   }
@@ -35,7 +31,7 @@ async function getNativeBalance(publicKey: string): Promise<string | null> {
 
 async function getStellarStatus() {
   const env = getStellarEnv();
-  const { publicKey, error: publicKeyError } = await derivePublicKey(env.secretKey);
+  const { publicKey, error: publicKeyError } = derivePublicKey(env.secretKey);
   const secretDiagnostics = buildEnvDiagnostics(process.env.STELLAR_SECRET_KEY, 'S');
   const contractDiagnostics = buildEnvDiagnostics(process.env[env.contractEnvName], 'C');
   const secretLooksValid = env.secretKey.startsWith('S');
