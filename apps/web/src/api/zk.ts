@@ -81,6 +81,10 @@ export const zkApi = {
     api.post<ApiResponse<unknown>>('/api/zk/generate-proof', { payrollCalculationId }),
   verifyOffchain: (payrollCalculationId: string) =>
     api.post<ApiResponse<unknown>>('/api/zk/verify-offchain', { payrollCalculationId }),
+  verifyOffchainProof: (zkProofId: string) =>
+    api.post<ApiResponse<unknown>>('/api/zk/verify-offchain', { zkProofId }),
   verifyOnStellar: (payrollCalculationId: string) =>
     api.post<ApiResponse<unknown>>('/api/zk/verify-on-stellar', { payrollCalculationId }),
+  verifyProofOnStellar: (zkProofId: string) =>
+    api.post<ApiResponse<unknown>>('/api/zk/verify-on-stellar', { zkProofId }),
 };

@@ -18,6 +18,7 @@ export function ZkVerification() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const stats = buildStats(verifs);
 
   async function runAction(action: () => Promise<unknown>, label: string) {
     setActionLoading(label);
@@ -45,6 +46,13 @@ export function ZkVerification() {
 
       <div className="simulation-warning mb-4">
         Manual audit flow: Poseidon commitment {'->'} Circom payroll.circom witness {'->'} Groth16 proof {'->'} off-chain verification {'->'} Stellar testnet registry.
+      </div>
+
+      <div className="zk-center-summary mb-4">
+        <SummaryMetric label="Total proofs" value={String(stats.total)} />
+        <SummaryMetric label="Ready for Stellar" value={String(stats.readyForStellar)} tone="info" />
+        <SummaryMetric label="Stellar receipts" value={String(stats.stellarVerified)} tone="success" />
+        <SummaryMetric label="Latest tx" value={stats.latestTxHash ? short(stats.latestTxHash, 12, 8) : '-'} mono />
       </div>
 
       {(error || actionError) && <div className="error-banner">{error || actionError}</div>}
@@ -86,6 +94,12 @@ function ZkCard({ verif, onAction, actionLoading, onMessage }: {
   const proofData = parseJson(verif.proofData);
   const publicSignals = parseJson(verif.publicSignals);
   const canVerifyStellar = isOffchainVerified;
+  const statusDetails = getStatusDetails(verif.proofStatus);
+  const criticalHash = verif.stellarTxHash || verif.commitmentHash;
+  const evidenceLabel = verif.stellarTxHash ? 'Stellar tx hash' : 'Commitment hash';
+  const proofActionId = `proof-${verif.zkProofId}`;
+  const offchainActionId = `offchain-${verif.zkProofId}`;
+  const stellarActionId = `stellar-${verif.zkProofId}`;
 
   return (
     <div className={`zk-card ${isVerified ? 'verified' : isGenerated ? 'generated' : isFailed ? 'failed' : ''}`}>
@@ -110,35 +124,35 @@ function ZkCard({ verif, onAction, actionLoading, onMessage }: {
           {verif.proofStatus === 'COMMITMENT_GENERATED' && (
             <button
               className="btn btn-sm btn-secondary"
-              disabled={actionLoading === `proof-${verif.payrollCalculationId}`}
-              onClick={() => onAction(() => zkApi.generateProof(verif.payrollCalculationId), `proof-${verif.payrollCalculationId}`)}
+              disabled={actionLoading === proofActionId}
+              onClick={() => onAction(() => zkApi.generateProof(verif.payrollCalculationId), proofActionId)}
             >
-              {actionLoading === `proof-${verif.payrollCalculationId}` ? 'Generating...' : 'Generar Proof'}
+              {actionLoading === proofActionId ? 'Generating...' : 'Generar Proof'}
             </button>
           )}
           {isGenerated && (
             <button
               className="btn btn-sm btn-secondary"
-              disabled={actionLoading === `offchain-${verif.payrollCalculationId}`}
-              onClick={() => onAction(() => zkApi.verifyOffchain(verif.payrollCalculationId), `offchain-${verif.payrollCalculationId}`)}
+              disabled={actionLoading === offchainActionId}
+              onClick={() => onAction(() => zkApi.verifyOffchainProof(verif.zkProofId), offchainActionId)}
             >
-              {actionLoading === `offchain-${verif.payrollCalculationId}` ? 'Checking...' : 'Verificar Off-chain'}
+              {actionLoading === offchainActionId ? 'Checking...' : 'Verificar Off-chain'}
             </button>
           )}
           {!isVerified && !isStellarPending && (
             <button
               className="btn btn-sm btn-primary"
-              disabled={!canVerifyStellar || actionLoading === `stellar-${verif.payrollCalculationId}`}
+              disabled={!canVerifyStellar || actionLoading === stellarActionId}
               title={canVerifyStellar ? 'Submit verified commitment to Stellar Testnet' : 'First generate proof and verify off-chain.'}
               onClick={() => {
                 if (!canVerifyStellar) {
                   onMessage('First generate proof and verify off-chain.');
                   return;
                 }
-                onAction(() => zkApi.verifyOnStellar(verif.payrollCalculationId), `stellar-${verif.payrollCalculationId}`);
+                onAction(() => zkApi.verifyProofOnStellar(verif.zkProofId), stellarActionId);
               }}
             >
-              {actionLoading === `stellar-${verif.payrollCalculationId}` ? 'Verifying...' : 'Verify on Stellar'}
+              {actionLoading === stellarActionId ? 'Verifying...' : 'Verify on Stellar'}
             </button>
           )}
           {!canVerifyStellar && !isVerified && !isStellarPending && (
@@ -149,6 +163,26 @@ function ZkCard({ verif, onAction, actionLoading, onMessage }: {
               {showProof ? 'Hide Proof' : 'View Proof'}
             </button>
           )}
+        </div>
+      </div>
+
+      <div className="zk-evidence-hero">
+        <div className="zk-evidence-main">
+          <div className="text-xs text-muted mb-4">{evidenceLabel}</div>
+          <div className="hash-highlight zk-evidence-hash" title={criticalHash}>
+            {short(criticalHash, 16, 12)}
+          </div>
+        </div>
+        <div className="zk-evidence-status">
+          <span className={`zk-status-dot ${statusDetails.tone}`} />
+          <div>
+            <div className="zk-status-title">{statusDetails.title}</div>
+            <div className="zk-status-copy">{statusDetails.copy}</div>
+          </div>
+        </div>
+        <div className="zk-next-step">
+          <div className="text-xs text-muted mb-4">NEXT STEP</div>
+          <div>{statusDetails.next}</div>
         </div>
       </div>
 
@@ -184,6 +218,7 @@ function ZkCard({ verif, onAction, actionLoading, onMessage }: {
             <span className={`badge ${verif.eventConfirmed ? 'badge-proof-verified' : 'badge-proof-not-generated'}`}>event {verif.eventConfirmed ? 'true' : 'false'}</span>
             <span className={`badge ${verif.stateConfirmed ? 'badge-proof-verified' : 'badge-proof-not-generated'}`}>state {verif.stateConfirmed ? 'true' : 'false'}</span>
             <span className="badge badge-proof-generated">{verif.confirmationSource || 'none'}</span>
+            {verif.ledger && <span className="badge badge-proof-generated">ledger {verif.ledger}</span>}
           </div>
         </div>
       )}
@@ -204,6 +239,89 @@ function ZkCard({ verif, onAction, actionLoading, onMessage }: {
       )}
     </div>
   );
+}
+
+function SummaryMetric({ label, value, tone, mono = false }: { label: string; value: string; tone?: 'info' | 'success'; mono?: boolean }) {
+  return (
+    <div className={`zk-summary-metric ${tone || ''}`}>
+      <div className="text-xs text-muted">{label}</div>
+      <div className={mono ? 'hash-highlight' : 'zk-summary-value'}>{value}</div>
+    </div>
+  );
+}
+
+function buildStats(verifs: ZkVerif[]) {
+  return {
+    total: verifs.length,
+    readyForStellar: verifs.filter(v => v.proofStatus === 'OFFCHAIN_VERIFIED').length,
+    stellarVerified: verifs.filter(v => v.proofStatus === 'STELLAR_VERIFIED' || v.proofStatus === 'VERIFIED').length,
+    latestTxHash: verifs.find(v => v.stellarTxHash)?.stellarTxHash || null,
+  };
+}
+
+function getStatusDetails(status: string) {
+  const details: Record<string, { title: string; copy: string; next: string; tone: string }> = {
+    COMMITMENT_GENERATED: {
+      title: 'Commitment ready',
+      copy: 'Poseidon commitment and payroll period hash are stored.',
+      next: 'Generate the Groth16 proof.',
+      tone: 'info',
+    },
+    GENERATED: {
+      title: 'Proof generated',
+      copy: 'Circom witness and Groth16 proof data are available.',
+      next: 'Run off-chain verification.',
+      tone: 'info',
+    },
+    PROOF_GENERATED: {
+      title: 'Proof generated',
+      copy: 'Circom witness and Groth16 proof data are available.',
+      next: 'Run off-chain verification.',
+      tone: 'info',
+    },
+    OFFCHAIN_VERIFIED: {
+      title: 'Ready for Stellar',
+      copy: 'The proof passed local verification and can be registered.',
+      next: 'Submit the verified commitment to Stellar.',
+      tone: 'success',
+    },
+    STELLAR_PENDING: {
+      title: 'Submitting to Stellar',
+      copy: 'The registry transaction is being processed.',
+      next: 'Wait for contract confirmation.',
+      tone: 'warning',
+    },
+    STELLAR_VERIFIED: {
+      title: 'Stellar verified',
+      copy: 'The registry confirmed this payroll commitment.',
+      next: 'Open the receipt in Stellar Explorer.',
+      tone: 'success',
+    },
+    VERIFIED: {
+      title: 'Stellar verified',
+      copy: 'The registry confirmed this payroll commitment.',
+      next: 'Open the receipt in Stellar Explorer.',
+      tone: 'success',
+    },
+    STELLAR_FAILED: {
+      title: 'Stellar failed',
+      copy: 'The registry submission did not finish successfully.',
+      next: 'Review status and retry after fixing configuration.',
+      tone: 'error',
+    },
+    FAILED: {
+      title: 'Verification failed',
+      copy: 'The proof or registry verification failed.',
+      next: 'Regenerate the proof and verify again.',
+      tone: 'error',
+    },
+  };
+  return details[status] || {
+    title: 'Not started',
+    copy: 'No ZK proof has been generated yet.',
+    next: 'Generate a Poseidon commitment.',
+    tone: 'muted',
+  };
 }
 
 function ZkStepFlow({ status }: { status: string }) {
