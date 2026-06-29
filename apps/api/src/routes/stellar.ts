@@ -1,5 +1,4 @@
 import { Router } from 'express';
-import { Keypair } from '@stellar/stellar-sdk';
 import { prisma } from '../lib/prisma';
 import { stellarService } from '../services/stellar.service';
 
@@ -11,9 +10,14 @@ function trimEnv(value: string | undefined, fallback = ''): string {
   return (value ?? fallback).trim();
 }
 
-function deriveAdminPublicKey(secretKey: string): string | null {
+async function importStellarSdk(): Promise<any> {
+  return new Function('specifier', 'return import(specifier)')('@stellar/stellar-sdk');
+}
+
+async function deriveAdminPublicKey(secretKey: string): Promise<string | null> {
   if (!secretKey) return null;
   try {
+    const { Keypair } = await importStellarSdk();
     return Keypair.fromSecret(secretKey).publicKey();
   } catch {
     return null;
@@ -34,7 +38,7 @@ async function getNativeBalance(publicKey: string): Promise<string | null> {
 
 stellarRouter.get('/admin-status', async (_req, res) => {
   const secretKey = trimEnv(process.env.STELLAR_SECRET_KEY);
-  const publicKey = deriveAdminPublicKey(secretKey);
+  const publicKey = await deriveAdminPublicKey(secretKey);
   const network = trimEnv(process.env.STELLAR_NETWORK, 'testnet');
   const rpcUrl = trimEnv(process.env.STELLAR_RPC_URL, 'https://soroban-testnet.stellar.org');
   const contractId = trimEnv(

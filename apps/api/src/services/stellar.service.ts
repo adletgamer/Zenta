@@ -57,6 +57,10 @@ export interface DecodedStellarEvent {
   matchesPeriod: boolean;
 }
 
+async function importStellarSdk(): Promise<any> {
+  return new Function('specifier', 'return import(specifier)')('@stellar/stellar-sdk');
+}
+
 async function verifyPayroll(input: StellarVerifyInput): Promise<StellarVerifyResult> {
   const verificationMode =
     input.verificationMode === 'SIMULATED' ? 'SIMULATED' : 'STELLAR_REGISTRY_TESTNET';
@@ -124,7 +128,7 @@ function bytesFromJson(value: unknown): Buffer {
 
 async function verifyOnTestnet(input: PayrollRegistryVerificationInput): Promise<StellarVerifyResult> {
   try {
-    const stellar = await import('@stellar/stellar-sdk');
+    const stellar = await importStellarSdk();
     const { BASE_FEE, Contract, Keypair, Networks, TransactionBuilder, xdr } = stellar;
     const SorobanRpc = (stellar as any).rpc || (stellar as any).SorobanRpc;
 
@@ -221,7 +225,7 @@ async function confirmPayrollRegistration(
   },
   providedServer?: any,
 ): Promise<StellarConfirmationResult> {
-  const stellar = await import('@stellar/stellar-sdk');
+  const stellar = await importStellarSdk();
   const SorobanRpc = (stellar as any).rpc || (stellar as any).SorobanRpc;
   const server = providedServer ?? new SorobanRpc.Server(STELLAR_RPC_URL);
   const contractId = input.contractId || STELLAR_CONTRACT_ID;
@@ -305,7 +309,7 @@ async function confirmContractState(server: any, contractId: string, commitmentH
   if (!contractId || !commitmentHash || !STELLAR_SECRET_KEY) return false;
 
   try {
-    const stellar = await import('@stellar/stellar-sdk');
+    const stellar = await importStellarSdk();
     const { BASE_FEE, Contract, Keypair, Networks, TransactionBuilder, xdr } = stellar;
     const sourceKeypair = Keypair.fromSecret(STELLAR_SECRET_KEY);
     const sourceAccount = await server.getAccount(sourceKeypair.publicKey());
