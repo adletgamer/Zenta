@@ -1,26 +1,23 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
+import { buildEnvDiagnostics, getStellarEnv } from '../lib/stellar-env';
 import { stellarService } from '../services/stellar.service';
 
 export const stellarRouter = Router();
 
 const HORIZON_TESTNET_URL = 'https://horizon-testnet.stellar.org';
 
-function trimEnv(value: string | undefined, fallback = ''): string {
-  return (value ?? fallback).trim();
-}
-
 async function importStellarSdk(): Promise<any> {
   return new Function('specifier', 'return import(specifier)')('@stellar/stellar-sdk');
 }
 
-async function deriveAdminPublicKey(secretKey: string): Promise<string | null> {
-  if (!secretKey) return null;
+async function derivePublicKey(secretKey: string): Promise<{ publicKey: string | null; error: string | null }> {
+  if (!secretKey) return { publicKey: null, error: null };
   try {
     const { Keypair } = await importStellarSdk();
-    return Keypair.fromSecret(secretKey).publicKey();
-  } catch {
-    return null;
+    return { publicKey: Keypair.fromSecret(secretKey).publicKey(), error: null };
+  } catch (err) {
+    return { publicKey: null, error: (err as Error).message };
   }
 }
 
@@ -37,15 +34,13 @@ async function getNativeBalance(publicKey: string): Promise<string | null> {
 }
 
 async function getStellarStatus() {
-  const secretKey = trimEnv(process.env.STELLAR_SECRET_KEY);
-  const publicKey = await deriveAdminPublicKey(secretKey);
-  const network = trimEnv(process.env.STELLAR_NETWORK, 'testnet');
-  const rpcUrl = trimEnv(process.env.STELLAR_RPC_URL, 'https://soroban-testnet.stellar.org');
-  const contractId = trimEnv(
-    process.env.STELLAR_PAYROLL_REGISTRY_CONTRACT_ID,
-    trimEnv(process.env.STELLAR_CONTRACT_ID),
-  );
-  const verificationMode = trimEnv(process.env.VERIFICATION_MODE, 'SIMULATED');
+  const env = getStellarEnv();
+  const { publicKey, error: publicKeyError } = await derivePublicKey(env.secretKey);
+  const secretDiagnostics = buildEnvDiagnostics(process.env.STELLAR_SECRET_KEY, 'S');
+  const contractDiagnostics = buildEnvDiagnostics(process.env[env.contractEnvName], 'C');
+  const secretLooksValid = env.secretKey.startsWith('S');
+  const contractLooksValid = env.contractId.startsWith('C');
+  const modeIsRegistry = env.verificationMode === 'STELLAR_REGISTRY_TESTNET';
 
   const [latestVerification, latestSubmission, balance] = await Promise.all([
     prisma.onchainVerification.findFirst({
@@ -75,11 +70,15 @@ async function getStellarStatus() {
     publicKey ? getNativeBalance(publicKey).catch(() => null) : Promise.resolve(null),
   ]);
 
-  const configured = Boolean(publicKey && contractId && rpcUrl);
+  const configured = Boolean(publicKey && secretLooksValid && contractLooksValid && env.rpcUrl && modeIsRegistry);
+  const sdkFailed = Boolean(publicKeyError);
+  const health = configured
+    ? 'READY'
+    : sdkFailed ? 'SDK_ERROR' : 'MISSING_CONFIGURATION';
   const latestTxHash = latestVerification?.stellarTxHash ?? latestSubmission?.txHash ?? null;
   const latestLedger = latestVerification?.ledger ?? latestSubmission?.ledger ?? null;
   const latestStatus = latestVerification?.status ?? latestSubmission?.status ?? null;
-  const latestContractId = latestVerification?.contractId ?? contractId;
+  const latestContractId = latestVerification?.contractId ?? env.contractId;
   const confirmation = latestVerification?.stellarTxHash
     ? await stellarService.confirmPayrollRegistration({
         txHash: latestVerification.stellarTxHash,
@@ -92,13 +91,13 @@ async function getStellarStatus() {
 
   return {
     configured,
-    health: configured ? 'READY' : 'MISSING_CONFIGURATION',
+    health,
     publicKey,
-    network,
-    rpcUrl,
+    network: env.network,
+    rpcUrl: env.rpcUrl,
     horizonUrl: HORIZON_TESTNET_URL,
-    contractId,
-    verificationMode,
+    contractId: env.contractId,
+    verificationMode: env.verificationMode,
     balance,
     latestTxHash,
     latestLedger,
@@ -110,6 +109,18 @@ async function getStellarStatus() {
     periodHash: latestVerification?.periodHash ?? null,
     latestSubmittedAt: latestVerification?.submittedAt ?? latestSubmission?.submittedAt ?? null,
     latestVerifiedAt: latestVerification?.verifiedAt ?? null,
+    diagnostics: {
+      secretKey: secretDiagnostics,
+      contractId: contractDiagnostics,
+      verificationMode: {
+        value: env.verificationMode,
+        isRegistryTestnet: modeIsRegistry,
+      },
+      sdk: {
+        available: !sdkFailed,
+        error: publicKeyError,
+      },
+    },
   };
 }
 
@@ -141,9 +152,10 @@ stellarRouter.get('/tx/:txHash/events', async (req, res) => {
         select: { txHash: true, contractId: true, ledger: true },
       });
 
+  const env = getStellarEnv();
   const contractId = verification?.contractId
     ?? submission?.contractId
-    ?? trimEnv(process.env.STELLAR_PAYROLL_REGISTRY_CONTRACT_ID, trimEnv(process.env.STELLAR_CONTRACT_ID));
+    ?? env.contractId;
   const ledger = verification?.ledger ?? submission?.ledger ?? null;
 
   const confirmation = await stellarService.diagnoseTransactionEvents({

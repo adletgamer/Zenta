@@ -21,7 +21,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   const json = await res.json();
   if (!res.ok) {
-    throw new ApiError(res.status, json.error || json.message || 'Request failed');
+    throw new ApiError(res.status, json.errorMessage || json.error || json.message || 'Request failed');
   }
   return json;
 }

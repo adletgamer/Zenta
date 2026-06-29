@@ -2,7 +2,8 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma';
 import { createAuditEvent } from '../lib/audit';
-import { zkService } from '../services/zk.service';
+import { readEnv } from '../lib/stellar-env';
+import { ZkFlowError, zkService } from '../services/zk.service';
 
 export const zkRouter = Router();
 
@@ -11,6 +12,15 @@ const proofBody = z.object({
   zkProofId: z.string().optional(),
   payrollCalculationId: z.string().optional(),
 });
+
+function stellarExplorerUrl(txHash: string | null | undefined): string | null {
+  return txHash ? `https://stellar.expert/explorer/testnet/tx/${txHash}` : null;
+}
+
+function safeErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.replace(/\s+/g, ' ').slice(0, 500);
+}
 
 async function resolveZkProofId(body: z.infer<typeof proofBody>): Promise<string> {
   if (body.zkProofId) return body.zkProofId;
@@ -37,10 +47,20 @@ zkRouter.get('/summary', async (_req, res) => {
     success: true,
     data: {
       pendingPayrolls: payrolls.filter(p => p.pendingBalance > 0).length,
-      generatedProofs: payrolls.filter(p => ['GENERATED', 'OFFCHAIN_VERIFIED', 'VERIFIED'].includes(p.proofStatus)).length,
-      verifiedOnchain: payrolls.filter(p => p.proofStatus === 'VERIFIED').length,
+      generatedProofs: payrolls.filter(p => ['PROOF_GENERATED', 'OFFCHAIN_VERIFIED', 'STELLAR_PENDING', 'STELLAR_VERIFIED'].includes(
+        zkService.normalizeProofStatus({
+          proofStatus: p.proofStatus,
+          commitmentHash: p.commitmentHash,
+          stellarTxHash: p.stellarTxHash,
+        }),
+      )).length,
+      verifiedOnchain: payrolls.filter(p => zkService.normalizeProofStatus({
+        proofStatus: p.proofStatus,
+        commitmentHash: p.commitmentHash,
+        stellarTxHash: p.stellarTxHash,
+      }) === 'STELLAR_VERIFIED').length,
       latestCommitmentHash: proofs[0]?.commitmentHash ?? null,
-      mode: verifications[0]?.verificationMode ?? process.env.VERIFICATION_MODE ?? 'SIMULATED',
+      mode: verifications[0]?.verificationMode ?? readEnv('VERIFICATION_MODE', 'SIMULATED'),
     },
   });
 });
@@ -50,7 +70,24 @@ zkRouter.get('/queue', async (_req, res) => {
     include: { operator: true, zkRecord: true, zkCommitment: true, zkProofs: true },
     orderBy: { createdAt: 'desc' },
   });
-  res.json({ success: true, data: payrolls });
+  res.json({
+    success: true,
+    data: payrolls.map(payroll => {
+      const latestProof = [...payroll.zkProofs].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
+      return {
+        ...payroll,
+        proofStatus: zkService.normalizeProofStatus({
+          proofStatus: latestProof?.proofStatus ?? payroll.proofStatus,
+          commitmentHash: latestProof?.commitmentHash ?? payroll.commitmentHash,
+          proofJson: latestProof?.proofJson,
+          publicSignals: latestProof?.publicSignals,
+          offchainVerified: Boolean(latestProof?.verifiedOffchainAt),
+          stellarTxHash: payroll.stellarTxHash,
+          proofData: payroll.zkRecord?.proofData,
+        }),
+      };
+    }),
+  });
 });
 
 zkRouter.get('/verifications', async (_req, res) => {
@@ -70,9 +107,18 @@ zkRouter.get('/verifications', async (_req, res) => {
     commitmentHash: proof.commitmentHash,
     commitmentField: proof.commitmentField,
     periodHash: proof.periodHash,
-    proofStatus: proof.onchainVerification?.status === 'STELLAR_VERIFIED'
-      ? 'VERIFIED'
-      : proof.proofStatus,
+    proofStatus: zkService.normalizeProofStatus({
+      proofStatus: proof.proofStatus,
+      commitmentHash: proof.commitmentHash,
+      proofJson: proof.proofJson,
+      publicSignals: proof.publicSignals,
+      offchainVerified: Boolean(proof.verifiedOffchainAt),
+      stellarTxHash: proof.onchainVerification?.stellarTxHash ?? proof.payrollCalculation.stellarTxHash,
+      onchainStatus: proof.onchainVerification?.status,
+      eventConfirmed: proof.onchainVerification?.eventConfirmed,
+      stateConfirmed: proof.onchainVerification?.status === 'STELLAR_VERIFIED',
+      proofData: proof.payrollCalculation.zkCommitment ? JSON.stringify(proof.proofJson ?? null) : null,
+    }),
     proofData: proof.proofJson ? JSON.stringify(proof.proofJson) : null,
     publicSignals: proof.publicSignals ? JSON.stringify(proof.publicSignals) : null,
     verificationMode: proof.onchainVerification?.verificationMode
@@ -181,6 +227,17 @@ zkRouter.post('/verify-offchain', async (req, res) => {
   const zkProofId = await resolveZkProofId(proofBody.parse(req.body));
   const result = await zkService.verifyProofOffchain(zkProofId);
 
+  await createAuditEvent({
+    eventType: 'PROOF_VERIFIED',
+    entityType: 'ZkProof',
+    entityId: zkProofId,
+    commitmentHash: result.zkProof.commitmentHash,
+    metadata: {
+      proofStatus: result.zkProof.proofStatus,
+      offchainVerified: result.offchainVerified,
+    },
+  });
+
   res.json({
     zkProofId,
     proofStatus: result.zkProof.proofStatus,
@@ -189,20 +246,82 @@ zkRouter.post('/verify-offchain', async (req, res) => {
 });
 
 zkRouter.post('/verify-on-stellar', async (req, res) => {
-  const zkProofId = await resolveZkProofId(proofBody.parse(req.body));
-  const result = await zkService.submitProofToStellar(zkProofId);
+  let zkProofId: string | null = null;
+  try {
+    zkProofId = await resolveZkProofId(proofBody.parse(req.body));
+    const proof = await prisma.zkProof.findUnique({ where: { id: zkProofId } });
 
-  res.json({
-    zkProofId,
-    verificationMode: result.onchainVerification.verificationMode,
-    status: result.onchainVerification.status,
-    stellarTxHash: result.onchainVerification.stellarTxHash,
-    ledger: result.onchainVerification.ledger,
-    eventConfirmed: result.stellar.eventConfirmed ?? result.onchainVerification.eventConfirmed,
-    stateConfirmed: result.stellar.stateConfirmed ?? false,
-    confirmationSource: result.stellar.confirmationSource ?? 'none',
-    commitmentHash: result.stellar.commitmentHash ?? result.onchainVerification.commitmentHash,
-    periodHash: result.stellar.periodHash ?? result.onchainVerification.periodHash,
-    contractId: result.onchainVerification.contractId,
-  });
+    await createAuditEvent({
+      eventType: 'STELLAR_SUBMISSION_STARTED',
+      entityType: 'ZkProof',
+      entityId: zkProofId,
+      commitmentHash: proof?.commitmentHash,
+      metadata: {
+        proofStatus: proof?.proofStatus,
+        verificationMode: readEnv('VERIFICATION_MODE', 'SIMULATED'),
+      },
+    });
+
+    const result = await zkService.submitProofToStellar(zkProofId);
+    const txHash = result.onchainVerification.stellarTxHash;
+
+    await createAuditEvent({
+      eventType: 'STELLAR_SUBMISSION_FINISHED',
+      entityType: 'ZkProof',
+      entityId: zkProofId,
+      commitmentHash: result.onchainVerification.commitmentHash,
+      metadata: {
+        proofStatus: result.onchainVerification.status,
+        verificationMode: result.onchainVerification.verificationMode,
+        txHash,
+        ledger: result.onchainVerification.ledger,
+        eventConfirmed: result.stellar.eventConfirmed ?? result.onchainVerification.eventConfirmed,
+        stateConfirmed: result.stellar.stateConfirmed ?? false,
+        confirmationSource: result.stellar.confirmationSource ?? 'none',
+      },
+    });
+
+    res.json({
+      zkProofId,
+      verificationMode: result.onchainVerification.verificationMode,
+      status: result.onchainVerification.status,
+      proofStatus: result.onchainVerification.status,
+      stellarTxHash: txHash,
+      stellarExplorerUrl: stellarExplorerUrl(txHash),
+      ledger: result.onchainVerification.ledger,
+      eventConfirmed: result.stellar.eventConfirmed ?? result.onchainVerification.eventConfirmed,
+      stateConfirmed: result.stellar.stateConfirmed ?? false,
+      confirmationSource: result.stellar.confirmationSource ?? 'none',
+      commitmentHash: result.stellar.commitmentHash ?? result.onchainVerification.commitmentHash,
+      periodHash: result.stellar.periodHash ?? result.onchainVerification.periodHash,
+      contractId: result.onchainVerification.contractId,
+    });
+  } catch (error) {
+    const statusCode = error instanceof ZkFlowError ? error.statusCode : 500;
+    const message = error instanceof ZkFlowError
+      ? error.message
+      : 'Unable to submit proof to Stellar registry.';
+    const errorMessage = safeErrorMessage(error);
+
+    if (zkProofId) {
+      const proof = await prisma.zkProof.findUnique({ where: { id: zkProofId } });
+      await createAuditEvent({
+        eventType: 'STELLAR_SUBMISSION_FAILED',
+        entityType: 'ZkProof',
+        entityId: zkProofId,
+        commitmentHash: proof?.commitmentHash,
+        metadata: {
+          proofStatus: error instanceof ZkFlowError ? error.proofStatus : proof?.proofStatus,
+          errorMessage,
+        },
+      });
+    }
+
+    res.status(statusCode).json({
+      success: false,
+      error: message,
+      errorMessage,
+      proofStatus: error instanceof ZkFlowError ? error.proofStatus : undefined,
+    });
+  }
 });

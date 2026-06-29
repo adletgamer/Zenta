@@ -36,8 +36,13 @@ export function ProofStatusBadge({ status }: { status: string }) {
     COMMITMENT_GENERATED: 'badge badge-proof-generated',
     GENERATING: 'badge badge-proof-generating',
     GENERATED: 'badge badge-proof-generated',
+    PROOF_GENERATED: 'badge badge-proof-generated',
     VERIFYING: 'badge badge-proof-verifying',
     VERIFIED: 'badge badge-proof-verified',
+    OFFCHAIN_VERIFIED: 'badge badge-proof-verified',
+    STELLAR_PENDING: 'badge badge-proof-verifying',
+    STELLAR_VERIFIED: 'badge badge-proof-verified',
+    STELLAR_FAILED: 'badge badge-proof-failed',
     FAILED: 'badge badge-proof-failed',
   };
   const labels: Record<string, string> = {
@@ -45,8 +50,13 @@ export function ProofStatusBadge({ status }: { status: string }) {
     COMMITMENT_GENERATED: 'Commitment',
     GENERATING: 'Generating...',
     GENERATED: 'Generated',
+    PROOF_GENERATED: 'Proof Generated',
     VERIFYING: 'Verifying...',
     VERIFIED: 'Verified',
+    OFFCHAIN_VERIFIED: 'Off-chain Verified',
+    STELLAR_PENDING: 'Stellar Pending',
+    STELLAR_VERIFIED: 'Stellar Verified',
+    STELLAR_FAILED: 'Stellar Failed',
     FAILED: 'Failed',
   };
   return <span className={map[status] || 'badge'}>{labels[status] || status}</span>;

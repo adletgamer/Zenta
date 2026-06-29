@@ -15,7 +15,11 @@ payrollRouter.get('/summary', async (_req, res) => {
     totalEarned: calcs.reduce((s, c) => s + c.expectedPayment, 0),
     totalPaid: calcs.reduce((s, c) => s + c.paidAmount, 0),
     totalPending: calcs.reduce((s, c) => s + c.pendingBalance, 0),
-    verifiedPayrolls: calcs.filter(c => c.proofStatus === 'VERIFIED').length,
+    verifiedPayrolls: calcs.filter(c => zkService.normalizeProofStatus({
+      proofStatus: c.proofStatus,
+      commitmentHash: c.commitmentHash,
+      stellarTxHash: c.stellarTxHash,
+    }) === 'STELLAR_VERIFIED').length,
     periodLabel: 'Week 1 - June 2025',
   };
   res.json({ success: true, data: summary });
@@ -29,9 +33,11 @@ payrollRouter.get('/operators', async (_req, res) => {
   });
   const normalized = calcs.map(calc => ({
     ...calc,
-    proofStatus: calc.proofStatus === 'GENERATING' && calc.commitmentHash
-      ? 'COMMITMENT_GENERATED'
-      : calc.proofStatus,
+    proofStatus: zkService.normalizeProofStatus({
+      proofStatus: calc.proofStatus,
+      commitmentHash: calc.commitmentHash,
+      stellarTxHash: calc.stellarTxHash,
+    }),
   }));
   res.json({ success: true, data: normalized });
 });

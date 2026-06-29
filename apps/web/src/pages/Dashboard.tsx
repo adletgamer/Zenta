@@ -113,7 +113,7 @@ function QueueRow({ item, actionLoading, onAction }: {
 }) {
   const canCommit = !item.commitmentHash;
   const canProof = item.proofStatus === 'COMMITMENT_GENERATED';
-  const canVerifyOffchain = item.proofStatus === 'GENERATED';
+  const canVerifyOffchain = item.proofStatus === 'GENERATED' || item.proofStatus === 'PROOF_GENERATED';
   const canRegisterStellar = item.proofStatus === 'OFFCHAIN_VERIFIED';
   const actionId = `${item.proofStatus}-${item.id}`;
 

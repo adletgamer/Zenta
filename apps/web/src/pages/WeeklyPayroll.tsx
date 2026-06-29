@@ -9,6 +9,25 @@ function stellarExplorerUrl(txHash: string): string {
   return `https://stellar.expert/explorer/testnet/tx/${txHash}`;
 }
 
+function shortHash(hash: string): string {
+  return `${hash.slice(0, 10)}...${hash.slice(-8)}`;
+}
+
+function payrollZkMessage(status: string): string {
+  const map: Record<string, string> = {
+    COMMITMENT_GENERATED: 'ZK commitment ready',
+    GENERATED: 'Proof generated',
+    PROOF_GENERATED: 'Proof generated',
+    OFFCHAIN_VERIFIED: 'Ready to submit to Stellar',
+    STELLAR_PENDING: 'Submitting to Stellar',
+    STELLAR_VERIFIED: 'Verified on Stellar',
+    VERIFIED: 'Verified on Stellar',
+    STELLAR_FAILED: 'Stellar verification failed',
+    FAILED: 'Verification failed',
+  };
+  return map[status] || 'ZK not started';
+}
+
 export function WeeklyPayroll() {
   const { data: summaryRes, loading: summaryLoading, error: summaryError, refetch: refetchSummary } = useApi(() => payrollApi.summary());
   const { data: calcsRes, loading: calcsLoading, error: calcsError, refetch: refetchCalcs } = useApi(() => payrollApi.operators());
@@ -79,7 +98,7 @@ export function WeeklyPayroll() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Weekly Payroll</h1>
-          <p className="page-subtitle">Calculate and manage operator earnings · {summary?.periodLabel}</p>
+          <p className="page-subtitle">Calculate and manage operator earnings. ERP payments do not submit Stellar transactions.</p>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
           <button className="btn btn-secondary" disabled={opsLoading || calculating} onClick={() => { setShowCalculate(true); setActionError(null); }}>Calculate Payroll</button>
@@ -127,7 +146,10 @@ export function WeeklyPayroll() {
 
       <div className="table-container">
         <div className="table-header">
-          <span className="table-title">Operator Payroll</span>
+          <div>
+            <span className="table-title">Operator Payroll</span>
+            <div className="table-subtitle">Pay registers an ERP payment only. Stellar appears after ZK off-chain verification is submitted to the registry.</div>
+          </div>
         </div>
         <table>
           <thead>
@@ -166,6 +188,7 @@ export function WeeklyPayroll() {
                 <td>
                   <div className="payroll-zk-cell">
                     <ProofStatusBadge status={calc.proofStatus} />
+                    <span className="payroll-zk-message">{payrollZkMessage(calc.proofStatus)}</span>
                     {calc.stellarTxHash ? (
                       <a
                         className="hash-link"
@@ -174,14 +197,14 @@ export function WeeklyPayroll() {
                         rel="noreferrer"
                         title={calc.stellarTxHash}
                       >
-                        Stellar TX
+                        {shortHash(calc.stellarTxHash)}
                       </a>
                     ) : null}
                   </div>
                 </td>
                 <td className="text-center">
                   {calc.pendingBalance > 0 && (
-                    <button className="btn btn-sm btn-primary" disabled={payingLoading} onClick={() => { setSelectedCalc(calc); setPayForm({ amount: calc.pendingBalance, method: 'CASH', reference: '', notes: '' }); setShowPayment(true); setActionError(null); }}>
+                    <button className="btn btn-sm btn-primary" title="Registers an ERP payment only. It does not submit a Stellar transaction." disabled={payingLoading} onClick={() => { setSelectedCalc(calc); setPayForm({ amount: calc.pendingBalance, method: 'CASH', reference: '', notes: '' }); setShowPayment(true); setActionError(null); }}>
                       Pay
                     </button>
                   )}
@@ -246,6 +269,7 @@ export function WeeklyPayroll() {
             <h2 className="modal-title">Register Payment</h2>
             <p className="text-muted" style={{ marginBottom: '16px', fontSize: '13px' }}>For {selectedCalc.operator?.displayName} · {selectedCalc.periodLabel}</p>
             {actionError && <div className="error-banner">{actionError}</div>}
+            <div className="simulation-warning mb-4">This records an ERP payroll payment only. It does not send a Stellar transaction.</div>
             <form className="modal-form" onSubmit={handlePayment}>
               <div className="form-group">
                 <label className="form-label">Amount ($)</label>

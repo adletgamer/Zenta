@@ -1,8 +1,9 @@
 import crypto from 'crypto';
+import { getStellarEnv } from '../lib/stellar-env';
 
-const STELLAR_CONTRACT_ID = process.env.STELLAR_CONTRACT_ID || '';
-const STELLAR_SECRET_KEY = process.env.STELLAR_SECRET_KEY || '';
-const STELLAR_RPC_URL = process.env.STELLAR_RPC_URL || 'https://soroban-testnet.stellar.org';
+function stellarEnv() {
+  return getStellarEnv();
+}
 
 export type VerificationMode = 'SIMULATED' | 'STELLAR_REGISTRY_TESTNET' | 'STELLAR_ZK_TESTNET';
 
@@ -80,10 +81,11 @@ async function submitPayrollRegistryVerification(
   }
 
   if (input.verificationMode === 'STELLAR_ZK_TESTNET') {
+    const env = stellarEnv();
     return {
       success: false,
       txHash: '',
-      contractId: STELLAR_CONTRACT_ID,
+      contractId: env.contractId,
       status: 'STELLAR_FAILED',
       verificationMode: 'STELLAR_ZK_TESTNET',
       ledger: 0,
@@ -96,11 +98,12 @@ async function submitPayrollRegistryVerification(
     };
   }
 
-  if (!STELLAR_CONTRACT_ID || !STELLAR_SECRET_KEY) {
+  const env = stellarEnv();
+  if (!env.contractId || !env.secretKey) {
     return {
       success: false,
       txHash: '',
-      contractId: STELLAR_CONTRACT_ID,
+      contractId: env.contractId,
       status: 'STELLAR_FAILED',
       verificationMode: 'STELLAR_REGISTRY_TESTNET',
       ledger: 0,
@@ -127,15 +130,16 @@ function bytesFromJson(value: unknown): Buffer {
 }
 
 async function verifyOnTestnet(input: PayrollRegistryVerificationInput): Promise<StellarVerifyResult> {
+  const env = stellarEnv();
   try {
     const stellar = await importStellarSdk();
     const { BASE_FEE, Contract, Keypair, Networks, TransactionBuilder, xdr } = stellar;
     const SorobanRpc = (stellar as any).rpc || (stellar as any).SorobanRpc;
 
-    const server = new SorobanRpc.Server(STELLAR_RPC_URL);
-    const sourceKeypair = Keypair.fromSecret(STELLAR_SECRET_KEY);
+    const server = new SorobanRpc.Server(env.rpcUrl);
+    const sourceKeypair = Keypair.fromSecret(env.secretKey);
     const sourceAccount = await server.getAccount(sourceKeypair.publicKey());
-    const contract = new Contract(STELLAR_CONTRACT_ID);
+    const contract = new Contract(env.contractId);
     // V1 registry stores the commitment and emits payroll_verified. It does not
     // verify Groth16 on-chain, so opaque placeholders are sent for ignored args.
     const registryPayload = { mode: input.verificationMode, commitmentHash: input.commitmentHash };
@@ -179,7 +183,7 @@ async function verifyOnTestnet(input: PayrollRegistryVerificationInput): Promise
     const confirmation = await confirmPayrollRegistration({
       txHash: sent.hash,
       ledger: txResult.ledger,
-      contractId: STELLAR_CONTRACT_ID,
+      contractId: env.contractId,
       commitmentHash: input.commitmentHash,
       periodHash: input.periodHash,
     }, server);
@@ -187,7 +191,7 @@ async function verifyOnTestnet(input: PayrollRegistryVerificationInput): Promise
     return {
       success: true,
       txHash: sent.hash,
-      contractId: STELLAR_CONTRACT_ID,
+      contractId: env.contractId,
       status: 'STELLAR_VERIFIED',
       verificationMode: 'STELLAR_REGISTRY_TESTNET',
       ledger: txResult.ledger,
@@ -201,7 +205,7 @@ async function verifyOnTestnet(input: PayrollRegistryVerificationInput): Promise
     return {
       success: false,
       txHash: '',
-      contractId: STELLAR_CONTRACT_ID,
+      contractId: env.contractId,
       status: 'STELLAR_FAILED',
       verificationMode: 'STELLAR_REGISTRY_TESTNET',
       ledger: 0,
@@ -225,10 +229,11 @@ async function confirmPayrollRegistration(
   },
   providedServer?: any,
 ): Promise<StellarConfirmationResult> {
+  const env = stellarEnv();
   const stellar = await importStellarSdk();
   const SorobanRpc = (stellar as any).rpc || (stellar as any).SorobanRpc;
-  const server = providedServer ?? new SorobanRpc.Server(STELLAR_RPC_URL);
-  const contractId = input.contractId || STELLAR_CONTRACT_ID;
+  const server = providedServer ?? new SorobanRpc.Server(env.rpcUrl);
+  const contractId = input.contractId || env.contractId;
   const eventResult = await confirmPayrollEvent(
     server,
     contractId,
@@ -239,7 +244,7 @@ async function confirmPayrollRegistration(
   );
   const stateConfirmed = eventResult.eventConfirmed
     ? true
-    : await confirmContractState(server, contractId, input.commitmentHash ?? '');
+    : await confirmContractStateWithRetry(server, contractId, input.commitmentHash ?? '');
 
   const confirmationSource = eventResult.eventConfirmed
     ? 'event'
@@ -306,12 +311,13 @@ async function confirmPayrollEvent(
 }
 
 async function confirmContractState(server: any, contractId: string, commitmentHash: string): Promise<boolean> {
-  if (!contractId || !commitmentHash || !STELLAR_SECRET_KEY) return false;
+  const env = stellarEnv();
+  if (!contractId || !commitmentHash || !env.secretKey) return false;
 
   try {
     const stellar = await importStellarSdk();
     const { BASE_FEE, Contract, Keypair, Networks, TransactionBuilder, xdr } = stellar;
-    const sourceKeypair = Keypair.fromSecret(STELLAR_SECRET_KEY);
+    const sourceKeypair = Keypair.fromSecret(env.secretKey);
     const sourceAccount = await server.getAccount(sourceKeypair.publicKey());
     const contract = new Contract(contractId);
     const tx = new TransactionBuilder(sourceAccount, {
@@ -328,6 +334,23 @@ async function confirmContractState(server: any, contractId: string, commitmentH
     debugLog('stellar state confirmation failed', { error: (err as Error).message });
     return false;
   }
+}
+
+async function confirmContractStateWithRetry(
+  server: any,
+  contractId: string,
+  commitmentHash: string,
+  attempts = 10,
+): Promise<boolean> {
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    if (await confirmContractState(server, contractId, commitmentHash)) {
+      return true;
+    }
+    if (attempt < attempts - 1) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+  }
+  return false;
 }
 
 function decodeStellarEvent(event: any, commitmentHash: string, periodHash: string): DecodedStellarEvent {

@@ -3,6 +3,7 @@ import path from 'path';
 import dotenv from 'dotenv';
 import express from 'express';
 import cors from 'cors';
+import { readEnv } from './lib/stellar-env';
 
 import { lotsRouter } from './routes/lots';
 import { operatorsRouter } from './routes/operators';
@@ -29,7 +30,7 @@ export function createApp() {
       status: 'ok',
       app: 'Zenta ERP API',
       version: '1.0.0',
-      verificationMode: process.env.VERIFICATION_MODE || 'SIMULATED',
+      verificationMode: readEnv('VERIFICATION_MODE', 'SIMULATED'),
       timestamp: new Date().toISOString(),
     });
   };

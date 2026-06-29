@@ -14,6 +14,9 @@ const EVENT_COLORS: Record<string, string> = {
   PROOF_GENERATED: 'var(--color-info)',
   PROOF_VERIFIED: 'var(--color-success)',
   STELLAR_SUBMITTED: '#60b4ff',
+  STELLAR_SUBMISSION_STARTED: '#60b4ff',
+  STELLAR_SUBMISSION_FINISHED: 'var(--color-success)',
+  STELLAR_SUBMISSION_FAILED: 'var(--color-error)',
   RATE_UPDATED: 'var(--color-warning)',
 };
 
@@ -22,7 +25,9 @@ const EVENT_LABELS: Record<string, string> = {
   OPERATOR_ASSIGNED: 'Operator Assigned', PAYROLL_CALCULATED: 'Payroll Calculated',
   PAYMENT_REGISTERED: 'Payment Registered', COMMITMENT_GENERATED: 'Commitment Generated',
   PROOF_GENERATED: 'Proof Generated', PROOF_VERIFIED: 'Proof Verified',
-  STELLAR_SUBMITTED: 'Stellar Submitted', RATE_UPDATED: 'Rate Updated',
+  STELLAR_SUBMITTED: 'Stellar Submitted', STELLAR_SUBMISSION_STARTED: 'Stellar Started',
+  STELLAR_SUBMISSION_FINISHED: 'Stellar Finished', STELLAR_SUBMISSION_FAILED: 'Stellar Failed',
+  RATE_UPDATED: 'Rate Updated',
 };
 
 export function AuditLog() {

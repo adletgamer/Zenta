@@ -2,9 +2,23 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { prisma } from '../lib/prisma';
+import { readEnv } from '../lib/stellar-env';
 import { stellarService, VerificationMode } from './stellar.service';
 
 type Poseidon = ((inputs: bigint[]) => bigint) & { F: { toObject: (value: unknown) => bigint } };
+export type ZkFlowStatus =
+  | 'COMMITMENT_GENERATED'
+  | 'PROOF_GENERATED'
+  | 'OFFCHAIN_VERIFIED'
+  | 'STELLAR_PENDING'
+  | 'STELLAR_VERIFIED'
+  | 'STELLAR_FAILED';
+
+export class ZkFlowError extends Error {
+  constructor(message: string, public statusCode = 400, public proofStatus?: string) {
+    super(message);
+  }
+}
 
 interface PayrollCommitmentSource {
   operatorPseudoCode: string;
@@ -104,7 +118,44 @@ function normalizeStoredField(value: string): string {
 }
 
 function selectRegistryMode(): VerificationMode {
-  return process.env.VERIFICATION_MODE === 'SIMULATED' ? 'SIMULATED' : 'STELLAR_REGISTRY_TESTNET';
+  return readEnv('VERIFICATION_MODE') === 'SIMULATED' ? 'SIMULATED' : 'STELLAR_REGISTRY_TESTNET';
+}
+
+function normalizeProofStatus(input: {
+  proofStatus?: string | null;
+  commitmentHash?: string | null;
+  proofJson?: unknown;
+  proofData?: string | null;
+  publicSignals?: unknown;
+  offchainVerified?: boolean | null;
+  stellarTxHash?: string | null;
+  onchainStatus?: string | null;
+  eventConfirmed?: boolean | null;
+  stateConfirmed?: boolean | null;
+}): ZkFlowStatus | string {
+  if (input.onchainStatus === 'STELLAR_VERIFIED' && input.stellarTxHash && (input.eventConfirmed || input.stateConfirmed)) {
+    return 'STELLAR_VERIFIED';
+  }
+  if (input.onchainStatus === 'STELLAR_PENDING') return 'STELLAR_PENDING';
+  if (input.onchainStatus === 'STELLAR_FAILED') return 'STELLAR_FAILED';
+  if (input.stellarTxHash && (input.eventConfirmed || input.stateConfirmed)) return 'STELLAR_VERIFIED';
+  if (input.offchainVerified) return 'OFFCHAIN_VERIFIED';
+  if (input.proofStatus === 'OFFCHAIN_VERIFIED') return 'OFFCHAIN_VERIFIED';
+  if (input.proofStatus === 'STELLAR_VERIFIED') return 'STELLAR_VERIFIED';
+  if (input.proofStatus === 'STELLAR_PENDING') return 'STELLAR_PENDING';
+  if (input.proofStatus === 'STELLAR_FAILED') return 'STELLAR_FAILED';
+  if (input.proofJson || input.proofData || input.publicSignals || input.proofStatus === 'GENERATED' || input.proofStatus === 'PROOF_GENERATED') {
+    return 'PROOF_GENERATED';
+  }
+  if (input.commitmentHash || input.proofStatus === 'GENERATING' || input.proofStatus === 'COMMITMENT_GENERATED') {
+    return 'COMMITMENT_GENERATED';
+  }
+  return input.proofStatus ?? 'NOT_GENERATED';
+}
+
+function summarizeError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.replace(/\s+/g, ' ').slice(0, 500);
 }
 
 function buildWitness(input: PayrollCommitmentSource, periodHash: string, nonce: string) {
@@ -366,7 +417,7 @@ async function generateProof(payrollCalculationId: string) {
     commitmentHash: commitment.commitmentHash,
     commitmentField: commitment.commitmentField,
     periodHash: commitment.periodHash,
-    proofStatus: 'GENERATED',
+    proofStatus: 'PROOF_GENERATED',
   });
 
   const [payroll, zkRecord, updatedProof] = await prisma.$transaction([
@@ -375,7 +426,7 @@ async function generateProof(payrollCalculationId: string) {
       data: {
         commitmentHash: commitment.commitmentHash,
         periodHash: commitment.periodHash,
-        proofStatus: 'GENERATED',
+        proofStatus: 'PROOF_GENERATED',
         verificationMode: 'STELLAR_REGISTRY_TESTNET',
       },
     }),
@@ -384,7 +435,7 @@ async function generateProof(payrollCalculationId: string) {
       update: {
         commitmentHash: commitment.commitmentHash,
         periodHash: commitment.periodHash,
-        proofStatus: 'GENERATED',
+        proofStatus: 'PROOF_GENERATED',
         proofData: JSON.stringify(proof),
         publicSignals: JSON.stringify(publicSignals),
         verificationMode: 'STELLAR_REGISTRY_TESTNET',
@@ -393,7 +444,7 @@ async function generateProof(payrollCalculationId: string) {
         payrollCalculationId,
         commitmentHash: commitment.commitmentHash,
         periodHash: commitment.periodHash,
-        proofStatus: 'GENERATED',
+        proofStatus: 'PROOF_GENERATED',
         proofData: JSON.stringify(proof),
         publicSignals: JSON.stringify(publicSignals),
         verificationMode: 'STELLAR_REGISTRY_TESTNET',
@@ -402,7 +453,7 @@ async function generateProof(payrollCalculationId: string) {
     prisma.zkProof.update({
       where: { id: zkProof.id },
       data: {
-        proofStatus: 'GENERATED',
+        proofStatus: 'PROOF_GENERATED',
         proofJson: proof as any,
         publicSignals: publicSignals as any,
         generatedAt: new Date(),
@@ -457,57 +508,138 @@ async function verifyProofOffchain(zkProofId: string) {
 async function submitProofToStellar(zkProofId: string) {
   const zkProof = await prisma.zkProof.findUnique({
     where: { id: zkProofId },
-    include: { payrollCalculation: { include: { zkCommitment: true } } },
+    include: { payrollCalculation: { include: { zkCommitment: true, zkRecord: true } }, onchainVerification: true },
   });
   if (!zkProof) throw new Error('ZK proof not found');
-  if (zkProof.proofStatus !== 'OFFCHAIN_VERIFIED') {
-    throw new Error('Proof must be OFFCHAIN_VERIFIED before Stellar registry submission');
+
+  const currentStatus = normalizeProofStatus({
+    proofStatus: zkProof.proofStatus,
+    commitmentHash: zkProof.commitmentHash,
+    proofJson: zkProof.proofJson,
+    publicSignals: zkProof.publicSignals,
+    offchainVerified: Boolean(zkProof.verifiedOffchainAt),
+    stellarTxHash: zkProof.onchainVerification?.stellarTxHash ?? zkProof.payrollCalculation.stellarTxHash,
+    onchainStatus: zkProof.onchainVerification?.status,
+    eventConfirmed: zkProof.onchainVerification?.eventConfirmed,
+    stateConfirmed: zkProof.onchainVerification?.status === 'STELLAR_VERIFIED',
+  });
+
+  if (currentStatus !== 'OFFCHAIN_VERIFIED') {
+    throw new ZkFlowError(
+      'Run generate-proof and verify-offchain before verify-on-stellar.',
+      400,
+      currentStatus,
+    );
   }
 
   const verificationMode = selectRegistryMode();
+  if (verificationMode === 'SIMULATED') {
+    throw new ZkFlowError(
+      'VERIFICATION_MODE is SIMULATED. No real Stellar transaction will be submitted.',
+      400,
+      currentStatus,
+    );
+  }
+  const pendingAt = new Date();
+
+  await prisma.$transaction([
+    prisma.onchainVerification.upsert({
+      where: { zkProofId },
+      update: {
+        verificationMode,
+        status: 'STELLAR_PENDING',
+        contractId: null,
+        stellarTxHash: null,
+        commitmentHash: zkProof.commitmentHash,
+        periodHash: zkProof.periodHash,
+        ledger: null,
+        eventConfirmed: false,
+        submittedAt: pendingAt,
+        verifiedAt: null,
+      },
+      create: {
+        zkProofId,
+        verificationMode,
+        status: 'STELLAR_PENDING',
+        contractId: null,
+        stellarTxHash: null,
+        commitmentHash: zkProof.commitmentHash,
+        periodHash: zkProof.periodHash,
+        ledger: null,
+        eventConfirmed: false,
+        submittedAt: pendingAt,
+        verifiedAt: null,
+      },
+    }),
+    prisma.payrollCalculation.update({
+      where: { id: zkProof.payrollCalculationId },
+      data: {
+        proofStatus: 'STELLAR_PENDING',
+        verificationStatus: 'Submitting registry transaction to Stellar Testnet.',
+        verificationMode,
+      },
+    }),
+    prisma.zkVerification.updateMany({
+      where: { payrollCalculationId: zkProof.payrollCalculationId },
+      data: {
+        proofStatus: 'STELLAR_PENDING',
+        verificationMode,
+      },
+    }),
+  ]);
+
   const stellarResult = await stellarService.submitPayrollRegistryVerification({
     commitmentHash: zkProof.commitmentHash,
     periodHash: zkProof.periodHash,
     verificationMode,
   });
-  const verifiedAt = stellarResult.success ? new Date() : null;
+  const confirmed = Boolean(stellarResult.success && (stellarResult.eventConfirmed || stellarResult.stateConfirmed));
+  const finalStatus: ZkFlowStatus = confirmed ? 'STELLAR_VERIFIED' : 'STELLAR_FAILED';
+  const verifiedAt = confirmed ? new Date() : null;
+  const errorMessage = confirmed
+    ? null
+    : summarizeError(stellarResult.error ?? 'Stellar transaction was not confirmed by event or contract state.');
 
   const [onchainVerification] = await prisma.$transaction([
     prisma.onchainVerification.upsert({
       where: { zkProofId },
       update: {
         verificationMode: stellarResult.verificationMode,
-        status: stellarResult.success ? 'STELLAR_VERIFIED' : 'STELLAR_FAILED',
+        status: finalStatus,
         contractId: stellarResult.contractId,
-        stellarTxHash: stellarResult.txHash,
+        stellarTxHash: stellarResult.txHash || null,
         commitmentHash: zkProof.commitmentHash,
         periodHash: zkProof.periodHash,
-        ledger: stellarResult.ledger,
+        ledger: stellarResult.ledger || null,
         eventConfirmed: stellarResult.eventConfirmed ?? false,
-        submittedAt: new Date(),
+        submittedAt: pendingAt,
         verifiedAt,
       },
       create: {
         zkProofId,
         verificationMode: stellarResult.verificationMode,
-        status: stellarResult.success ? 'STELLAR_VERIFIED' : 'STELLAR_FAILED',
+        status: finalStatus,
         contractId: stellarResult.contractId,
-        stellarTxHash: stellarResult.txHash,
+        stellarTxHash: stellarResult.txHash || null,
         commitmentHash: zkProof.commitmentHash,
         periodHash: zkProof.periodHash,
-        ledger: stellarResult.ledger,
+        ledger: stellarResult.ledger || null,
         eventConfirmed: stellarResult.eventConfirmed ?? false,
-        submittedAt: new Date(),
+        submittedAt: pendingAt,
         verifiedAt,
       },
+    }),
+    prisma.zkProof.update({
+      where: { id: zkProofId },
+      data: { proofStatus: finalStatus },
     }),
     prisma.payrollCalculation.update({
       where: { id: zkProof.payrollCalculationId },
       data: {
-        proofStatus: stellarResult.success ? 'VERIFIED' : 'FAILED',
-        verificationStatus: stellarResult.status,
+        proofStatus: finalStatus,
+        verificationStatus: errorMessage ?? stellarResult.status,
         verificationMode: stellarResult.verificationMode,
-        stellarTxHash: stellarResult.txHash,
+        stellarTxHash: stellarResult.txHash || null,
         stellarContractId: stellarResult.contractId,
         verifiedAt,
       },
@@ -515,14 +647,14 @@ async function submitProofToStellar(zkProofId: string) {
     prisma.zkVerification.updateMany({
       where: { payrollCalculationId: zkProof.payrollCalculationId },
       data: {
-        proofStatus: stellarResult.success ? 'VERIFIED' : 'FAILED',
+        proofStatus: finalStatus,
         verificationMode: stellarResult.verificationMode,
-        stellarTxHash: stellarResult.txHash,
+        stellarTxHash: stellarResult.txHash || null,
         stellarContractId: stellarResult.contractId,
         verifiedAt,
       },
     }),
-    ...(zkProof.payrollCalculation.zkCommitment
+    ...(confirmed && zkProof.payrollCalculation.zkCommitment && stellarResult.txHash
       ? [
           prisma.stellarSubmission.create({
             data: {
@@ -530,7 +662,7 @@ async function submitProofToStellar(zkProofId: string) {
               payrollCalculationId: zkProof.payrollCalculationId,
               txHash: stellarResult.txHash,
               contractId: stellarResult.contractId,
-              status: stellarResult.status,
+              status: finalStatus,
               mode: stellarResult.verificationMode,
               ledger: stellarResult.ledger,
             },
@@ -539,10 +671,19 @@ async function submitProofToStellar(zkProofId: string) {
       : []),
   ]);
 
+  if (!confirmed) {
+    throw new ZkFlowError(
+      errorMessage ?? 'Stellar registry submission failed.',
+      stellarResult.success ? 502 : 500,
+      finalStatus,
+    );
+  }
+
   return { onchainVerification, stellar: stellarResult };
 }
 
 export const zkService = {
+  normalizeProofStatus,
   generateCommitmentForInput,
   generateCommitment,
   generateProof,

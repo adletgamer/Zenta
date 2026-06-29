@@ -8,6 +8,10 @@ function short(value: string | null | undefined, head = 10, tail = 8): string {
   return `${value.slice(0, head)}...${value.slice(-tail)}`;
 }
 
+function stellarExplorerUrl(txHash: string | null | undefined): string | null {
+  return txHash ? `https://stellar.expert/explorer/testnet/tx/${txHash}` : null;
+}
+
 function formatDate(value: string | null): string {
   return value ? new Date(value).toLocaleString() : '-';
 }
@@ -43,25 +47,32 @@ export function SystemStatus() {
       </div>
 
       {statusError && <div className="error-banner">{statusError}</div>}
+      {status && !status.configured && (
+        <div className="error-banner">
+          Stellar backend signer is not configured. Check STELLAR_SECRET_KEY and STELLAR_CONTRACT_ID in Vercel.
+        </div>
+      )}
 
       <div className="admin-grid">
         <section className="admin-panel admin-panel-primary">
           <div className="admin-panel-header">
             <div>
-              <div className="card-title">Wallet de Firma</div>
-              <div className="card-subtitle">Public signer for Stellar registry submissions</div>
+              <div className="card-title">Stellar Testnet Registry</div>
+              <div className="card-subtitle">Backend signer and Soroban registry used for verified payroll commitments</div>
             </div>
             <span className={`badge ${status?.configured ? 'badge-proof-verified' : 'badge-proof-failed'}`}>
-              {status?.health || 'LOADING'}
+              {status?.configured ? 'CONFIGURED' : status?.health || 'LOADING'}
             </span>
           </div>
-          <div className="admin-wallet-address" title={status?.publicKey || ''}>
-            {statusLoading ? 'Loading wallet...' : status?.publicKey || 'Not configured'}
+          <div className="stellar-registry-grid">
+            <RegistryValue label="Backend signer publicKey" value={statusLoading ? 'Loading wallet...' : short(status?.publicKey, 12, 10)} title={status?.publicKey || undefined} />
+            <RegistryValue label="Contract ID" value={short(status?.contractId, 12, 10)} title={status?.contractId || undefined} />
+            <RegistryValue label="Latest Stellar TX" value={short(status?.latestTxHash, 12, 10)} title={status?.latestTxHash || undefined} href={stellarExplorerUrl(status?.latestTxHash)} />
           </div>
           <div className="admin-metric-row">
-            <StatusMetric label="Balance" value={status?.balance ? `${Number(status.balance).toFixed(4)} XLM` : '-'} />
+            <StatusMetric label="Health" value={status?.health || '-'} />
             <StatusMetric label="Network" value={status?.network || '-'} />
-            <StatusMetric label="Mode" value={status?.verificationMode || '-'} />
+            <StatusMetric label="Verification mode" value={status?.verificationMode || '-'} />
           </div>
         </section>
 
@@ -73,9 +84,11 @@ export function SystemStatus() {
             </div>
             <span className="badge badge-proof-generated">TESTNET</span>
           </div>
-          <InfoRow label="Contract ID" value={status?.contractId || '-'} />
+          <InfoRow label="Configured" value={status?.configured ? 'true' : 'false'} />
+          <InfoRow label="Health" value={status?.health || '-'} />
+          <InfoRow label="Network" value={status?.network || '-'} />
           <InfoRow label="RPC URL" value={status?.rpcUrl || '-'} />
-          <InfoRow label="Latest TX" value={short(status?.latestTxHash)} title={status?.latestTxHash || undefined} />
+          <InfoRow label="Latest TX" value={short(status?.latestTxHash)} title={status?.latestTxHash || undefined} href={stellarExplorerUrl(status?.latestTxHash)} />
           <InfoRow label="Ledger" value={status?.latestLedger ? String(status.latestLedger) : '-'} />
           <InfoRow label="Event Confirmed" value={status?.eventConfirmed ? 'true' : 'false'} />
           <InfoRow label="State Confirmed" value={status?.stateConfirmed ? 'true' : 'false'} />
@@ -130,11 +143,32 @@ function StatusMetric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function InfoRow({ label, value, title }: { label: string; value: string; title?: string }) {
+function RegistryValue({ label, value, title, href }: { label: string; value: string; title?: string; href?: string | null }) {
+  const content = href ? (
+    <a className="hash-link registry-link" href={href} target="_blank" rel="noreferrer" title={title || value}>
+      {value}
+    </a>
+  ) : (
+    <span className="hash-highlight registry-value" title={title || value}>{value}</span>
+  );
+
+  return (
+    <div className="registry-card">
+      <div className="text-xs text-muted">{label}</div>
+      {content}
+    </div>
+  );
+}
+
+function InfoRow({ label, value, title, href }: { label: string; value: string; title?: string; href?: string | null }) {
   return (
     <div className="admin-info-row">
       <span className="text-muted">{label}</span>
-      <span className="hash truncate" title={title || value}>{value}</span>
+      {href ? (
+        <a className="hash-link admin-info-value" href={href} target="_blank" rel="noreferrer" title={title || value}>{value}</a>
+      ) : (
+        <span className="hash admin-info-value" title={title || value}>{value}</span>
+      )}
     </div>
   );
 }

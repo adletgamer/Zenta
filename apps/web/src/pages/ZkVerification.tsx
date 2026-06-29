@@ -7,15 +7,22 @@ function stellarExplorerUrl(txHash: string): string {
   return `https://stellar.expert/explorer/testnet/tx/${txHash}`;
 }
 
+function short(value: string, head = 10, tail = 8): string {
+  if (value.length <= head + tail + 3) return value;
+  return `${value.slice(0, head)}...${value.slice(-tail)}`;
+}
+
 export function ZkVerification() {
   const { data: verifsRes, loading, error, refetch } = useApi(() => zkApi.list());
   const verifs = verifsRes?.data || [];
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
 
   async function runAction(action: () => Promise<unknown>, label: string) {
     setActionLoading(label);
     setActionError(null);
+    setActionMessage(null);
     try {
       await action();
       refetch();
@@ -41,6 +48,7 @@ export function ZkVerification() {
       </div>
 
       {(error || actionError) && <div className="error-banner">{error || actionError}</div>}
+      {actionMessage && <div className="simulation-warning mb-4">{actionMessage}</div>}
 
       {loading ? (
         <div className="loading-container"><div className="spinner" /></div>
@@ -54,7 +62,7 @@ export function ZkVerification() {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {verifs.map(v => (
-            <ZkCard key={v.id} verif={v} onAction={runAction} actionLoading={actionLoading} />
+            <ZkCard key={v.id} verif={v} onAction={runAction} actionLoading={actionLoading} onMessage={setActionMessage} />
           ))}
         </div>
       )}
@@ -62,23 +70,27 @@ export function ZkVerification() {
   );
 }
 
-function ZkCard({ verif, onAction, actionLoading }: {
+function ZkCard({ verif, onAction, actionLoading, onMessage }: {
   verif: ZkVerif;
   onAction: (action: () => Promise<unknown>, label: string) => void;
   actionLoading: string | null;
+  onMessage: (message: string) => void;
 }) {
   const [showProof, setShowProof] = useState(false);
-  const isVerified = verif.proofStatus === 'VERIFIED';
-  const isGenerated = verif.proofStatus === 'GENERATED';
+  const isVerified = verif.proofStatus === 'VERIFIED' || verif.proofStatus === 'STELLAR_VERIFIED';
+  const isGenerated = verif.proofStatus === 'GENERATED' || verif.proofStatus === 'PROOF_GENERATED';
   const isOffchainVerified = verif.proofStatus === 'OFFCHAIN_VERIFIED';
+  const isStellarPending = verif.proofStatus === 'STELLAR_PENDING';
+  const isFailed = verif.proofStatus === 'STELLAR_FAILED' || verif.proofStatus === 'FAILED';
   const zkCommitment = verif.payrollCalculation?.zkCommitment;
   const proofData = parseJson(verif.proofData);
   const publicSignals = parseJson(verif.publicSignals);
+  const canVerifyStellar = isOffchainVerified;
 
   return (
-    <div className={`zk-card ${isVerified ? 'verified' : isGenerated ? 'generated' : ''}`}>
+    <div className={`zk-card ${isVerified ? 'verified' : isGenerated ? 'generated' : isFailed ? 'failed' : ''}`}>
       <div className="zk-card-top">
-        <div>
+        <div className="zk-card-title-block">
           <div className="flex items-center gap-3 mb-4">
             <ProofStatusBadge status={verif.proofStatus} />
             <span className="badge badge-proof-verified">{verif.proofSystem || 'Groth16'}</span>
@@ -91,9 +103,10 @@ function ZkCard({ verif, onAction, actionLoading }: {
           <div className="text-sm text-muted">
             {verif.payrollCalculation?.periodLabel} - {verif.payrollCalculation?.processedPairs || 0} units - ${verif.payrollCalculation?.expectedPayment.toFixed(2)}
           </div>
+          <ZkStepFlow status={verif.proofStatus} />
         </div>
 
-        <div className="flex gap-2">
+        <div className="zk-action-row">
           {verif.proofStatus === 'COMMITMENT_GENERATED' && (
             <button
               className="btn btn-sm btn-secondary"
@@ -112,14 +125,24 @@ function ZkCard({ verif, onAction, actionLoading }: {
               {actionLoading === `offchain-${verif.payrollCalculationId}` ? 'Checking...' : 'Verificar Off-chain'}
             </button>
           )}
-          {isOffchainVerified && (
+          {!isVerified && !isStellarPending && (
             <button
               className="btn btn-sm btn-primary"
-              disabled={actionLoading === `stellar-${verif.payrollCalculationId}`}
-              onClick={() => onAction(() => zkApi.verifyOnStellar(verif.payrollCalculationId), `stellar-${verif.payrollCalculationId}`)}
+              disabled={!canVerifyStellar || actionLoading === `stellar-${verif.payrollCalculationId}`}
+              title={canVerifyStellar ? 'Submit verified commitment to Stellar Testnet' : 'First generate proof and verify off-chain.'}
+              onClick={() => {
+                if (!canVerifyStellar) {
+                  onMessage('First generate proof and verify off-chain.');
+                  return;
+                }
+                onAction(() => zkApi.verifyOnStellar(verif.payrollCalculationId), `stellar-${verif.payrollCalculationId}`);
+              }}
             >
-              {actionLoading === `stellar-${verif.payrollCalculationId}` ? 'Verifying...' : 'Verificar'}
+              {actionLoading === `stellar-${verif.payrollCalculationId}` ? 'Verifying...' : 'Verify on Stellar'}
             </button>
+          )}
+          {!canVerifyStellar && !isVerified && !isStellarPending && (
+            <div className="zk-action-hint">First generate proof and verify off-chain.</div>
           )}
           {verif.proofData && (
             <button className="btn btn-sm btn-ghost" onClick={() => setShowProof(s => !s)}>
@@ -148,6 +171,23 @@ function ZkCard({ verif, onAction, actionLoading }: {
         )}
       </div>
 
+      {verif.stellarTxHash && (
+        <div className="stellar-receipt">
+          <div>
+            <div className="text-xs text-muted mb-4">STELLAR TESTNET RECEIPT</div>
+            <div className="hash-highlight" title={verif.stellarTxHash}>{short(verif.stellarTxHash, 12, 10)}</div>
+          </div>
+          <a className="btn btn-sm btn-secondary" href={stellarExplorerUrl(verif.stellarTxHash)} target="_blank" rel="noreferrer">
+            Open in Stellar Explorer
+          </a>
+          <div className="receipt-flags">
+            <span className={`badge ${verif.eventConfirmed ? 'badge-proof-verified' : 'badge-proof-not-generated'}`}>event {verif.eventConfirmed ? 'true' : 'false'}</span>
+            <span className={`badge ${verif.stateConfirmed ? 'badge-proof-verified' : 'badge-proof-not-generated'}`}>state {verif.stateConfirmed ? 'true' : 'false'}</span>
+            <span className="badge badge-proof-generated">{verif.confirmationSource || 'none'}</span>
+          </div>
+        </div>
+      )}
+
       {showProof && verif.proofData && (
         <div className="mt-4">
           <div className="proof-grid">
@@ -162,6 +202,38 @@ function ZkCard({ verif, onAction, actionLoading }: {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function ZkStepFlow({ status }: { status: string }) {
+  const steps = [
+    { key: 'COMMITMENT_GENERATED', label: 'Commitment Generated' },
+    { key: 'PROOF_GENERATED', label: 'Proof Generated' },
+    { key: 'OFFCHAIN_VERIFIED', label: 'Off-chain Verified' },
+    { key: 'STELLAR_VERIFIED', label: 'Verified on Stellar' },
+  ];
+  const indexByStatus: Record<string, number> = {
+    COMMITMENT_GENERATED: 0,
+    GENERATED: 1,
+    PROOF_GENERATED: 1,
+    OFFCHAIN_VERIFIED: 2,
+    STELLAR_PENDING: 2,
+    VERIFIED: 3,
+    STELLAR_VERIFIED: 3,
+    STELLAR_FAILED: 2,
+    FAILED: 1,
+  };
+  const current = indexByStatus[status] ?? -1;
+
+  return (
+    <div className="zk-step-flow" aria-label="ZK verification flow">
+      {steps.map((step, index) => (
+        <div key={step.key} className={`zk-step ${index < current ? 'done' : index === current ? 'active' : ''}`}>
+          <span className="zk-step-dot" />
+          <span>{step.label}</span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -181,10 +253,10 @@ function HashBlock({ label, value, highlight = false, href }: { label: string; v
       <div className="text-xs text-muted mb-4">{label}</div>
       {href ? (
         <a className={`${highlight ? 'hash-highlight' : 'hash'} hash-link truncate`} href={href} target="_blank" rel="noreferrer" title={value}>
-          {value}
+          {highlight ? short(value) : value}
         </a>
       ) : (
-        <div className={`${highlight ? 'hash-highlight' : 'hash'} truncate`} title={value}>{value}</div>
+        <div className={`${highlight ? 'hash-highlight' : 'hash'} hash-block-value`} title={value}>{highlight ? short(value) : value}</div>
       )}
     </div>
   );
